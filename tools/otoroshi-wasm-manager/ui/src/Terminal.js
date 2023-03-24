@@ -5,7 +5,9 @@ import { solarizedDark } from '@uiw/codemirror-theme-solarized';
 import io from 'socket.io-client';
 const socket = io();
 
-function Terminal({ sizeTerminal, toggleResizingTerminal, changeTerminalSize, selectedPlugin, onLoadConfigurationFile, configFiles }) {
+function Terminal({ sizeTerminal, toggleResizingTerminal, changeTerminalSize,
+  selectedPlugin, onLoadConfigurationFile, configFiles,
+  closedSidebar }) {
   const [content, setContent] = useState('');
   const [loadConfigurationFile, setLoadConfigurationFile] = useState(false);
   const ref = useRef();
@@ -85,7 +87,7 @@ function Terminal({ sizeTerminal, toggleResizingTerminal, changeTerminalSize, se
 
     <CodeMirror
       ref={ref}
-      maxWidth='calc(100vw - 250px)'
+      maxWidth={closedSidebar ? 'calc(100vw - 42px)' : 'calc(100vw - 250px)'}
       height={`calc(${(sizeTerminal) * 100}vh)`}
       value={content}
       extensions={[]}

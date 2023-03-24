@@ -18,7 +18,13 @@ const LOGOS = {
   ts: <Ts style={{ height: 22, width: 22, marginBottom: 2 }} />,
   go: <Go style={{ height: 22, width: 22 }} />,
   opa: <OPA style={{ height: 22, width: 22 }} />,
-  github:  <Github style={{ height: 22, width: 22 }} />
+  github: <Github style={{ height: 22, width: 22 }} />,
+  logo: <div style={{
+    backgroundImage: `url('/android-chrome-512x512.png')`, 
+    backgroundSize: 'contain',
+    height: 42, 
+    width: 42
+  }} />
 };
 
 LOGOS.rust = LOGOS.rs;

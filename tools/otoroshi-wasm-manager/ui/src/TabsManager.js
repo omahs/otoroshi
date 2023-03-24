@@ -6,6 +6,8 @@ import Terminal from './Terminal';
 import { Run } from './Run';
 import { PublishView } from './PublishView';
 import { TabsHeader } from './TabsHeader';
+import Slider from './Slider';
+import { LOGOS } from './FilesLogo';
 
 // close the publisher when selecteing other plugins
 
@@ -14,7 +16,7 @@ function TabsManager({ plugins, ...props }) {
   const [currentTab, setCurrentTab] = useState()
   const [sizeTerminal, changeTerminalSize] = useState(!props.selectedPlugin ? 0 : .3)
   const [resizingTerminal, toggleResizingTerminal] = useState(false)
-
+  const [closedSidebar, setSidebarStatus] = useState(false);
   const [currentPlugin, setCurrentPlugin] = useState()
 
   useEffect(() => {
@@ -52,50 +54,66 @@ function TabsManager({ plugins, ...props }) {
       }
     }}
   >
-    <div className='d-flex flex-column' style={{ background: 'rgb(228,229,230)' }}>
-      <h1 style={{
-        fontWeight: 'bold',
-        textTransform: 'uppercase',
-        background: '#f9b000',
-        color: 'white',
-        height: 42
-      }} className="p-2 m-0 d-flex align-items-center">OTO WASM</h1>
-      <PluginManager
-        plugins={plugins}
-        setSelectedPlugin={props.setSelectedPlugin}
-        selectedPlugin={props.selectedPlugin}
-        reloadPlugins={props.reloadPlugins}
-        onPluginClick={props.onPluginClick}
-        onNewPlugin={props.onNewPlugin}
-        setFilename={props.onPluginNameChange}
-        removePlugin={props.removePlugin}
-        enablePluginRenaming={props.enablePluginRenaming}
-      />
-      {props.selectedPlugin && <FileManager
-        removeFile={props.removeFile}
-        currentTab={currentTab}
-        selectedPlugin={props.selectedPlugin}
-        files={props.selectedPlugin.files}
-        configFiles={props.configFiles}
-        onNewFile={props.onNewFile}
-        onFileChange={props.onFileChange}
-        onFileClick={file => {
-          if (!tabs.find(f => f === file.filename))
-            setTabs([...tabs, file.filename]);
+    <div className='d-flex flex-column'
+      style={{
+        background: 'rgb(228,229,230)',
+        position: 'relative'
+      }}
+    >
+      <Slider setSidebarStatus={() => setSidebarStatus(!closedSidebar)} />
 
-          setCurrentTab(file.filename)
-        }} />}
+      {closedSidebar && <>
+        <div>
+          {LOGOS.logo}
+        </div>
+      </>}
 
-      {props.selectedPlugin && <button type="button" className='btn btn-outline-danger m-3' style={{ fontSize: '.8rem' }}
-        onClick={props.removePlugin}>
-        Remove {props.selectedPlugin.filename}
-      </button>}
+      {!closedSidebar && <>
+        <h1 style={{
+          fontWeight: 'bold',
+          textTransform: 'uppercase',
+          background: '#f9b000',
+          color: 'white',
+          height: 42
+        }} className="p-2 m-0 d-flex align-items-center">OTO WASM</h1>
+        <PluginManager
+          plugins={plugins}
+          setSelectedPlugin={props.setSelectedPlugin}
+          selectedPlugin={props.selectedPlugin}
+          reloadPlugins={props.reloadPlugins}
+          onPluginClick={props.onPluginClick}
+          onNewPlugin={props.onNewPlugin}
+          setFilename={props.onPluginNameChange}
+          removePlugin={props.removePlugin}
+          enablePluginRenaming={props.enablePluginRenaming}
+        />
+        {props.selectedPlugin && <FileManager
+          removeFile={props.removeFile}
+          currentTab={currentTab}
+          selectedPlugin={props.selectedPlugin}
+          files={props.selectedPlugin.files}
+          configFiles={props.configFiles}
+          onNewFile={props.onNewFile}
+          onFileChange={props.onFileChange}
+          onFileClick={file => {
+            if (!tabs.find(f => f === file.filename))
+              setTabs([...tabs, file.filename]);
+
+            setCurrentTab(file.filename)
+          }} />}
+
+        {props.selectedPlugin && <button type="button" className='btn btn-outline-danger m-3' style={{ fontSize: '.8rem' }}
+          onClick={props.removePlugin}>
+          Remove {props.selectedPlugin.filename}
+        </button>}
+      </>}
     </div>
 
     <div style={{ flex: 1, height: '100vh', position: 'relative' }} className="d-flex flex-column">
       <div className='d-flex flex-column scroll-container' style={{ flex: 1 - sizeTerminal, overflow: 'scroll' }}>
         <TabsHeader
           {...props}
+          closedSidebar={closedSidebar}
           showPlaySettings={() => {
             setTab('Runner');
             props.showPlaySettings();
@@ -129,6 +147,7 @@ function TabsManager({ plugins, ...props }) {
           />}
         {props.selectedPlugin ? <Contents
           tabs={tabs}
+          closedSidebar={closedSidebar}
           configFiles={props.configFiles}
           selectedPlugin={props.selectedPlugin}
           handleContent={newContent => props.handleContent(currentTab, newContent)}
@@ -136,6 +155,7 @@ function TabsManager({ plugins, ...props }) {
           currentTab={currentTab} /> : null}
       </div>
       {props.selectedPlugin && <Terminal
+        closedSidebar={closedSidebar}
         selectedPlugin={props.selectedPlugin}
         sizeTerminal={sizeTerminal}
         changeTerminalSize={changeTerminalSize}
@@ -144,7 +164,7 @@ function TabsManager({ plugins, ...props }) {
         configFiles={props.configFiles}
       />}
     </div>
-  </div>
+  </div >
 }
 
 function Tabs({ tabs, setCurrentTab, setTabs, currentTab, selectedPlugin, configFiles }) {
@@ -178,7 +198,7 @@ function Tabs({ tabs, setCurrentTab, setTabs, currentTab, selectedPlugin, config
   </div>
 }
 
-function Contents({ tabs, setCurrentTab, currentTab, handleContent, selectedPlugin, configFiles }) {
+function Contents({ tabs, setCurrentTab, currentTab, handleContent, selectedPlugin, configFiles, closedSidebar }) {
   return <div style={{ flex: 1, marginTop: 42, display: 'flex', flexDirection: 'column' }}>
     {tabs
       .filter(tab => [...selectedPlugin.files, ...configFiles].find(f => f.filename === tab))
@@ -187,6 +207,7 @@ function Contents({ tabs, setCurrentTab, currentTab, handleContent, selectedPlug
         if (plugin)
           return <Tab
             {...plugin}
+            closedSidebar={closedSidebar}
             handleContent={handleContent}
             key={tab}
             selected={currentTab ? tab === currentTab : false}

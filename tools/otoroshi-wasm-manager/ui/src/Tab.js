@@ -9,7 +9,7 @@ import { javascript } from '@codemirror/lang-javascript';
 import { autocompletion } from '@codemirror/autocomplete';
 import { marked } from "marked";
 
-function Tab({ content, ext, handleContent, selected, readOnly }) {
+function Tab({ content, ext, handleContent, selected, readOnly, closedSidebar }) {
   if (!content || !selected)
     return null
 
@@ -41,7 +41,7 @@ function Tab({ content, ext, handleContent, selected, readOnly }) {
       }}
       height='100%'
       readOnly={readOnly}
-      maxWidth='calc(100vw - 250px)'
+      maxWidth={closedSidebar ? 'calc(100vw - 42px)' : 'calc(100vw - 250px)'}
       value={content}
       extensions={[getLanguageExtension(), autocompletion()]}
       onChange={value => {

@@ -58,3 +58,7 @@ h1 {
 .scroll-container::-webkit-scrollbar {
   display: none;
 }
+
+.sidebar:hover {
+  cursor: pointer;
+}

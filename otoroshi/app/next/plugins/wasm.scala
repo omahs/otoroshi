@@ -5,8 +5,7 @@ import akka.stream.Materializer
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
 import com.github.blemale.scaffeine.{Cache, Scaffeine}
-import org.extism.sdk.Plugin
-import org.extism.sdk.Context
+import org.extism.sdk.{Context, HostFunction, HostUserData, Plugin}
 import org.extism.sdk.manifest.{Manifest, MemoryOptions}
 import org.extism.sdk.wasm.WasmSourceResolver
 import otoroshi.env.Env
@@ -410,17 +409,18 @@ object WasmUtils {
         val resolver = new WasmSourceResolver()
         val source = resolver.resolve("wasm", wasm.toByteBuffer.array())
         val manifest = new Manifest(
-          Seq[org.extism.sdk.wasm.WasmSource](source).asJava,
-          new MemoryOptions(config.memoryPages),
-          config.config.asJava,
-          config.allowedHosts.asJava,
+         source
+         // new MemoryOptions(config.memoryPages),
+         // config.config.asJava,
+          // config.allowedHosts.asJava,
           // config.allowedPaths.asJava, // TODO: uncomment when new lib version available
         )
 
         val context = new Context()
-        val plugin = context.newPlugin(manifest, config.wasi,
-          next.plugins.HostFunctions.getFunctions(config, ctx, pluginId),
-          next.plugins.LinearMemories.getMemories(config, ctx, pluginId))
+//        val plugin = context.newPlugin(manifest, config.wasi,
+//          next.plugins.HostFunctions.getFunctions(config, ctx, pluginId),
+//          next.plugins.LinearMemories.getMemories(config, ctx, pluginId))
+        val plugin = context.newPlugin(manifest, config.wasi, null)
         WasmContextSlot(manifest, context, plugin)
       }
 
@@ -429,7 +429,8 @@ object WasmUtils {
           val slot = createPlugin()
 
           val output = (if (config.opa) {
-            next.plugins.OPA.evalute(slot.plugin, input.stringify)
+            ""
+//            next.plugins.OPA.evalute(slot.plugin, input.stringify)
           } else {
             slot.plugin.call(functionName, input.stringify)
           })
@@ -450,7 +451,8 @@ object WasmUtils {
               val slot = createPlugin()
               if (config.preserve) context.put(config.source.cacheKey, slot)
               val output = (if (config.opa) {
-                next.plugins.OPA.evalute(slot.plugin, input.stringify)
+                ""
+//                next.plugins.OPA.evalute(slot.plugin, input.stringify)
               } else {
                 slot.plugin.call(functionName, input.stringify)
               })

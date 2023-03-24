@@ -88,6 +88,8 @@ const schema = {
     flow: [
       'httpAccess',
       'globalDataStoreAccess.read',
+      'globalDataStoreAccess.write',
+      'pluginDataStoreAccess.read',
       'pluginDataStoreAccess.write',
       'globalMapAccess.read',
       'globalMapAccess.write',

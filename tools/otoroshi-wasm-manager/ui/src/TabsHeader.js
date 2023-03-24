@@ -2,11 +2,12 @@
 
 export function TabsHeader({
   selectedPlugin, onSave, onBuild,
-  showPlaySettings, showPublishSettings, children }) {
+  showPlaySettings, showPublishSettings, children, closedSidebar }) {
 
   return <Header
     selectedPluginType={selectedPlugin?.type}
     onSave={onSave}
+    closedSidebar={closedSidebar}
     onBuild={onBuild}
     showActions={!!selectedPlugin}
     showPlaySettings={showPlaySettings}
@@ -17,10 +18,10 @@ export function TabsHeader({
 
 function Header({
   children, onSave, onBuild, showActions,
-  showPlaySettings, showPublishSettings, selectedPluginType }) {
+  showPlaySettings, showPublishSettings, selectedPluginType, closedSidebar }) {
 
   return <div className='d-flex align-items-center justify-content-between bg-light'
-    style={{ position: 'fixed', height: 42, zIndex: 10, width: 'calc(100vw - 250px)' }}>
+    style={{ position: 'fixed', height: 42, zIndex: 10, width: closedSidebar ? 'calc(100vw - 42px)' : 'calc(100vw - 250px)' }}>
     {children}
 
     <div className='d-flex align-items-center'>
