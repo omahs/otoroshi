@@ -183,15 +183,17 @@ case class WasmSource(kind: WasmSourceKind, path: String, opts: JsValue = Json.o
   def cacheKey = s"${kind.name.toLowerCase}://${path}"
   def getConfig()(implicit env: Env, ec: ExecutionContext): Future[Option[WasmConfig]] = kind.getConfig(path, opts)
   def getWasm()(implicit env: Env, ec: ExecutionContext): Future[Either[JsValue, ByteString]] = {
-    val cache = WasmUtils.scriptCache(env)
-    cache.getIfPresent(cacheKey) match {
-      case Some(script) => script.script.right.vfuture
-      case None => {
-        kind.getWasm(path, opts).map {
-          case Left(err) => err.left
-          case Right(bs) => {
-            cache.put(cacheKey, CachedWasmScript(bs, System.currentTimeMillis()))
-            bs.right
+    env.metrics.withTimer("[PLUGIN]: get wasm", display = true) {
+      val cache = WasmUtils.scriptCache(env)
+      cache.getIfPresent(cacheKey) match {
+        case Some(script) => script.script.right.vfuture
+        case None => {
+          kind.getWasm(path, opts).map {
+            case Left(err) => err.left
+            case Right(bs) => {
+              cache.put(cacheKey, CachedWasmScript(bs, System.currentTimeMillis()))
+              bs.right
+            }
           }
         }
       }
@@ -401,94 +403,102 @@ object WasmUtils {
       }
 
   private def callWasm(wasm: ByteString, config: WasmConfig, defaultFunctionName: String, input: JsValue, ctx: Option[NgCachedConfigContext] = None, pluginId: String, attrsOpt: Option[TypedMap])(implicit env: Env): Either[JsValue, String] = {
-    val functionName = config.functionName.filter(_.nonEmpty).getOrElse(defaultFunctionName)
-    try {
-      def createPlugin(): WasmContextSlot = {
-        if (WasmUtils.logger.isDebugEnabled) WasmUtils.logger.debug(s"creating wasm plugin instance for ${config.source.cacheKey}")
-        // println(s"""creating plugin with wasm with wasi at "${config.wasi}" of "${wasm.size}" bytes""")
-        val resolver = new WasmSourceResolver()
-        val source = resolver.resolve("wasm", wasm.toByteBuffer.array())
-        val manifest = new Manifest(
-         source
-         // new MemoryOptions(config.memoryPages),
-         // config.config.asJava,
-          // config.allowedHosts.asJava,
-          // config.allowedPaths.asJava, // TODO: uncomment when new lib version available
-        )
+    env.metrics.withTimer("[PLUGIN]: call wasm", display = true) {
+      val functionName = config.functionName.filter(_.nonEmpty).getOrElse(defaultFunctionName)
+      try {
+        def createPlugin(): WasmContextSlot = {
+          if (WasmUtils.logger.isDebugEnabled) WasmUtils.logger.debug(s"creating wasm plugin instance for ${config.source.cacheKey}")
+          // println(s"""creating plugin with wasm with wasi at "${config.wasi}" of "${wasm.size}" bytes""")
+          env.metrics.withTimer("[PLUGIN]: create plugin", display = true) {
+            val resolver = env.metrics.withTimer("[PLUGIN]: new resolver", display = true) { new WasmSourceResolver() }
+            val source = env.metrics.withTimer("[PLUGIN]: resolve resolver", display = true) {  resolver.resolve("wasm", wasm.toByteBuffer.array()) }
+            val manifest = env.metrics.withTimer("[PLUGIN]: new manifest", display = true) { new Manifest(
+              source
+              // new MemoryOptions(config.memoryPages),
+              // config.config.asJava,
+              // config.allowedHosts.asJava,
+              // config.allowedPaths.asJava, // TODO: uncomment when new lib version available
+            )}
 
-        val context = new Context()
-//        val plugin = context.newPlugin(manifest, config.wasi,
-//          next.plugins.HostFunctions.getFunctions(config, ctx, pluginId),
-//          next.plugins.LinearMemories.getMemories(config, ctx, pluginId))
-        val plugin = context.newPlugin(manifest, config.wasi, null)
-        WasmContextSlot(manifest, context, plugin)
-      }
-
-      attrsOpt match {
-        case None => {
-          val slot = createPlugin()
-
-          val output = (if (config.opa) {
-            ""
-//            next.plugins.OPA.evalute(slot.plugin, input.stringify)
-          } else {
-            slot.plugin.call(functionName, input.stringify)
-          })
-          slot.close()
-          output.right
-        }
-        case Some(attrs) => {
-          val context = attrs.get(otoroshi.next.plugins.Keys.WasmContextKey) match {
-            case None => {
-              val context = new WasmContext()
-              attrs.put(otoroshi.next.plugins.Keys.WasmContextKey -> context)
-              context
-            }
-            case Some(context) => context
-          }
-          context.get(config.source.cacheKey) match {
-            case None => {
-              val slot = createPlugin()
-              if (config.preserve) context.put(config.source.cacheKey, slot)
-              val output = (if (config.opa) {
-                ""
-//                next.plugins.OPA.evalute(slot.plugin, input.stringify)
-              } else {
-                slot.plugin.call(functionName, input.stringify)
-              })
-              if (!config.preserve) slot.close()
-              output.right
-            }
-            case Some(plugin) => plugin.plugin.call(functionName, input.stringify).right
+            val context = env.metrics.withTimer("[PLUGIN]: new context", display = true) { new Context()}
+            //        val plugin = context.newPlugin(manifest, config.wasi,
+            //          next.plugins.HostFunctions.getFunctions(config, ctx, pluginId),
+            //          next.plugins.LinearMemories.getMemories(config, ctx, pluginId))
+            val plugin = env.metrics.withTimer("[PLUGIN]: new plugin", display = true) { context.newPlugin(manifest, config.wasi, null)}
+            WasmContextSlot(manifest, context, plugin)
           }
         }
+
+        attrsOpt match {
+          case None => {
+            val slot = createPlugin()
+
+            val output = (if (config.opa) {
+              ""
+              //            next.plugins.OPA.evalute(slot.plugin, input.stringify)
+            } else {
+              slot.plugin.call(functionName, input.stringify)
+            })
+            slot.close()
+            output.right
+          }
+          case Some(attrs) => {
+            val context = attrs.get(otoroshi.next.plugins.Keys.WasmContextKey) match {
+              case None => {
+                val context = new WasmContext()
+                attrs.put(otoroshi.next.plugins.Keys.WasmContextKey -> context)
+                context
+              }
+              case Some(context) => context
+            }
+            context.get(config.source.cacheKey) match {
+              case None => {
+                val slot = createPlugin()
+                if (config.preserve) context.put(config.source.cacheKey, slot)
+                val output = (if (config.opa) {
+                  ""
+                  //                next.plugins.OPA.evalute(slot.plugin, input.stringify)
+                } else {
+                  env.metrics.withTimer("[PLUGIN]: call", display = true) {
+                    slot.plugin.call(functionName, input.stringify)
+                  }
+                })
+                if (!config.preserve) slot.close()
+                output.right
+              }
+              case Some(plugin) => plugin.plugin.call(functionName, input.stringify).right
+            }
+          }
+        }
+      } catch {
+        case e: Throwable if e.getMessage.contains("wasm backtrace") =>
+          logger.error(s"error while invoking wasm function '${functionName}'", e)
+          Json.obj(
+            "error" -> "wasm_error",
+            "error_description" -> JsArray(e.getMessage.split("\\n").filter(_.trim.nonEmpty).map(JsString.apply))
+          ).left
+        case e: Throwable =>
+          logger.error(s"error while invoking wasm function '${functionName}'", e)
+          Json.obj("error" -> "wasm_error", "error_description" -> JsString(e.getMessage)).left
       }
-    } catch {
-      case e: Throwable if e.getMessage.contains("wasm backtrace") =>
-        logger.error(s"error while invoking wasm function '${functionName}'", e)
-        Json.obj(
-          "error" -> "wasm_error",
-          "error_description" -> JsArray(e.getMessage.split("\\n").filter(_.trim.nonEmpty).map(JsString.apply))
-        ).left
-      case e: Throwable =>
-        logger.error(s"error while invoking wasm function '${functionName}'", e)
-        Json.obj("error" -> "wasm_error", "error_description" -> JsString(e.getMessage)).left
     }
   }
 
   def execute(config: WasmConfig, defaultFunctionName: String, input: JsValue, ctx: Option[NgCachedConfigContext], attrs: Option[TypedMap])(implicit env: Env): Future[Either[JsValue, String]] = {
-    val pluginId = config.source.cacheKey
-    scriptCache.getIfPresent(pluginId) match {
-      case Some(wasm) => config.source.getConfig().map {
-        case None => WasmUtils.callWasm(wasm.script, config, defaultFunctionName, input, ctx, pluginId, attrs)
-        case Some(finalConfig) => WasmUtils.callWasm(wasm.script, finalConfig.copy(functionName = finalConfig.functionName.orElse(config.functionName)), defaultFunctionName, input, ctx, pluginId, attrs)
-      }
-      case None if config.source.kind == WasmSourceKind.Unknown => Left(Json.obj("error" -> "missing source")).future
-      case _ => config.source.getWasm().flatMap {
-        case Left(err) => err.left.vfuture
-        case Right(wasm) => config.source.getConfig().map {
-          case None => WasmUtils.callWasm(wasm, config, defaultFunctionName, input, ctx, pluginId, attrs)
-          case Some(finalConfig) => WasmUtils.callWasm(wasm, finalConfig.copy(functionName = finalConfig.functionName.orElse(config.functionName)), defaultFunctionName, input, ctx, pluginId, attrs)
+    env.metrics.withTimer("[PLUGIN]: execute", display = true) {
+      val pluginId = config.source.cacheKey
+      scriptCache.getIfPresent(pluginId) match {
+        case Some(wasm) => config.source.getConfig().map {
+          case None => WasmUtils.callWasm(wasm.script, config, defaultFunctionName, input, ctx, pluginId, attrs)
+          case Some(finalConfig) => WasmUtils.callWasm(wasm.script, finalConfig.copy(functionName = finalConfig.functionName.orElse(config.functionName)), defaultFunctionName, input, ctx, pluginId, attrs)
+        }
+        case None if config.source.kind == WasmSourceKind.Unknown => Left(Json.obj("error" -> "missing source")).future
+        case _ => config.source.getWasm().flatMap {
+          case Left(err) => err.left.vfuture
+          case Right(wasm) => config.source.getConfig().map {
+            case None => WasmUtils.callWasm(wasm, config, defaultFunctionName, input, ctx, pluginId, attrs)
+            case Some(finalConfig) => WasmUtils.callWasm(wasm, finalConfig.copy(functionName = finalConfig.functionName.orElse(config.functionName)), defaultFunctionName, input, ctx, pluginId, attrs)
+          }
         }
       }
     }
@@ -656,10 +666,12 @@ class WasmAccessValidator extends NgAccessValidator {
       .cachedConfig(internalName)(WasmConfig.format)
       .getOrElse(WasmConfig())
 
+    println("### NEW CALL ###")
     WasmUtils
       .execute(config, "access", ctx.wasmJson, ctx.some, ctx.attrs.some)
       .flatMap {
         case Right(res)  =>
+          println("### END CALL ###")
           val response = Json.parse(res)
           val result   = (response \ "result").asOpt[Boolean].getOrElse(false)
           if (result) {
