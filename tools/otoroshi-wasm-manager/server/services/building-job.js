@@ -145,7 +145,9 @@ const onSuccessProcess = (plugin, user, buildFolder, logsFolder, wasmName, zipHa
               `${removeAfterLastHyphen(wasmName)}.wasm` :
               `${removeAfterLastHyphen(removeAfterLastHyphen(wasmName))}.wasm`).replace(/-/g, "_")
           ) :
-          //path.join(buildFolder, 'target', 'wasm32-wasi', 'release', `${wasmName.substring(0, wasmName.lastIndexOf('-'))}.wasm`) :
+          // path.join(buildFolder, 'target', 'wasm32-wasi', 'release', (release ?
+          //       `${removeAfterLastHyphen(wasmName)}.wasm` :
+          //       `${removeAfterLastHyphen(removeAfterLastHyphen(wasmName))}.wasm`).replace(/-/g, "_") :
           path.join(buildFolder, `${wasmName}.wasm`)
       ),
       saveLogsFile(
