@@ -1116,7 +1116,8 @@ object HostFunctions {
       Http.getFunctions(config, attrs) ++
       State.getFunctions(config, pluginId) ++
       DataStore.getFunctions(config, pluginId) ++
-      OPA.getFunctions(config, ctx)
+      OPA.getFunctions(config, ctx) ++
+      WAF.getFunctions(config, ctx)
 
     functions.collect {
       case func if func.authorized(config.authorizations) => func.function

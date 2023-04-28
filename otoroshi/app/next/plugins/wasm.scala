@@ -271,7 +271,7 @@ class WasmRequestTransformer extends NgRequestTransformer {
   override def transformsRequest: Boolean                  = true
   override def transformsResponse: Boolean                 = false
   override def transformsError: Boolean                    = false
-  override def isTransformRequestAsync: Boolean            = false
+  override def isTransformRequestAsync: Boolean            = true
   override def isTransformResponseAsync: Boolean           = false
   override def name: String                                = "Wasm Request Transformer"
   override def description: Option[String]                 =
@@ -795,6 +795,65 @@ class WasmOPA extends NgAccessValidator {
       }
   }
 }
+
+class WasmWAF extends NgAccessValidator {
+
+  override def steps: Seq[NgStep]                = Seq(NgStep.ValidateAccess)
+  override def categories: Seq[NgPluginCategory] = Seq(NgPluginCategory.AccessControl, NgPluginCategory.Wasm)
+  override def visibility: NgPluginVisibility    = NgPluginVisibility.NgUserLand
+
+  override def multiInstance: Boolean                      = true
+  override def core: Boolean                               = true
+  override def name: String                                = "Web Application Firewall (WAF)"
+  override def description: Option[String]                 = "WAF as wasm module".some
+  override def isAccessAsync: Boolean                      = true
+  override def defaultConfigObject: Option[NgPluginConfig] = WasmConfig(
+    waf = true, wasi = true
+  ).some
+
+  override def access(ctx: NgAccessContext)(implicit env: Env, ec: ExecutionContext): Future[NgAccess] = {
+    val config = ctx
+      .cachedConfig(internalName)(WasmConfig.format)
+      .getOrElse(WasmConfig())
+
+    WasmUtils
+      .execute(config, "_start", ctx.wasmJson, ctx.some, ctx.attrs.some)
+      .flatMap {
+        case Right(res) =>
+          val result    = Json.parse(res).asOpt[JsObject].getOrElse(Json.obj())
+          val canAccess = (result \ "result").asOpt[Boolean].getOrElse(false)
+          if (canAccess) {
+            NgAccess.NgAllowed.vfuture
+          } else {
+            Errors
+              .craftResponseResult(
+                "Forbidden access",
+                Results.Status(403),
+                ctx.request,
+                None,
+                None,
+                attrs = ctx.attrs,
+                maybeRoute = ctx.route.some
+              )
+              .map(r => NgAccess.NgDenied(r))
+          }
+        case Left(err)  =>
+          println(err)
+          Errors
+            .craftResponseResult(
+              (err \ "error").asOpt[String].getOrElse("An error occured"),
+              Results.Status(400),
+              ctx.request,
+              None,
+              None,
+              attrs = ctx.attrs,
+              maybeRoute = ctx.route.some
+            )
+            .map(r => NgAccess.NgDenied(r))
+      }
+  }
+}
+
 
 class WasmRouter extends NgRouter {
 

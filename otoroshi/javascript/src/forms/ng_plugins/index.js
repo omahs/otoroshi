@@ -123,6 +123,7 @@ import WasmJob from './WasmJob';
 import WasmPreRoute from './WasmPreRoute';
 import WasmRouter from './WasmRouter';
 import WasmOPA from './WasmOPA';
+import WasmWAF from './WasmWAF';
 
 export const Backend = NgBackend;
 export const Frontend = NgFrontend;
@@ -243,6 +244,7 @@ export const Plugins = [
   WasmBackend,
   WasmAccessValidator,
   WasmOPA,
+  WasmWAF,
   WasmRequestTransformer,
   WasmResponseTransformer,
   WasmRequestHandler,

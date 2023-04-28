@@ -295,6 +295,7 @@ case class WasmConfig(
     preserve: Boolean = true,
     wasi: Boolean = false,
     opa: Boolean = false,
+    waf: Boolean = false,
     authorizations: WasmAuthorizations = WasmAuthorizations()
 ) extends NgPluginConfig {
   def json: JsValue = Json.obj(
@@ -306,6 +307,7 @@ case class WasmConfig(
     "allowedPaths"   -> allowedPaths,
     "wasi"           -> wasi,
     "opa"            -> opa,
+    "waf"            -> waf,
     "preserve"       -> preserve,
     "authorizations" -> authorizations.json
   )
@@ -348,6 +350,7 @@ object WasmConfig {
         allowedPaths = (json \ "allowedPaths").asOpt[Map[String, String]].getOrElse(Map.empty),
         wasi = (json \ "wasi").asOpt[Boolean].getOrElse(false),
         opa = (json \ "opa").asOpt[Boolean].getOrElse(false),
+        waf = (json \ "waf").asOpt[Boolean].getOrElse(false),
         preserve = (json \ "preserve").asOpt[Boolean].getOrElse(true),
         authorizations = (json \ "authorizations")
           .asOpt[WasmAuthorizations](WasmAuthorizations.format.reads)
@@ -469,9 +472,12 @@ object WasmUtils {
 
           val output = if (config.opa) {
             OPA.evalute(slot.plugin, input.stringify)
+          } else if (config.waf) {
+            WAF.evaluate(slot.plugin, input.stringify)
           } else {
             slot.plugin.call(functionName, input.stringify)
           }
+
           slot.close()
           output.right
         }
@@ -490,6 +496,8 @@ object WasmUtils {
               if (config.preserve) context.put(config.source.cacheKey, slot)
               val output = if (config.opa) {
                 OPA.evalute(slot.plugin, input.stringify)
+              } else if (config.waf) {
+                WAF.evaluate(slot.plugin, input.stringify)
               } else {
                 slot.plugin.call(functionName, input.stringify)
               }
