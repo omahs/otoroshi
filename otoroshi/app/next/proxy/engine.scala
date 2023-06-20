@@ -3189,6 +3189,7 @@ class ProxyEngine() extends RequestHandler {
     val status                         = attrs.get(otoroshi.plugins.Keys.StatusOverrideKey).getOrElse(response.status)
     val isHttp10                       = rawRequest.version == "HTTP/1.0"
     val willStream                     = if (isHttp10) false else (!isChunked)
+
     val headersOutFiltered             = Seq(
       env.Headers.OtoroshiStateResp
     ).++(headersOutStatic).map(_.toLowerCase)

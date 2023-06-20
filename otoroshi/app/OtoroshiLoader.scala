@@ -2,7 +2,6 @@ package otoroshi.loader
 
 import com.softwaremill.macwire._
 import controllers.{Assets, AssetsComponents}
-import otoroshi.netty.ReactorNettyServer
 import otoroshi.actions._
 import otoroshi.api.OtoroshiLoaderHelper.EnvContainer
 import otoroshi.api.{GenericApiController, OtoroshiEnvHolder, OtoroshiLoaderHelper}
@@ -11,8 +10,9 @@ import otoroshi.controllers.adminapi._
 import otoroshi.env.Env
 import otoroshi.gateway._
 import otoroshi.loader.modules._
-import otoroshi.next.controllers.{NgPluginsController, TryItController}
+import otoroshi.netty.ReactorNettyServer
 import otoroshi.next.controllers.adminapi._
+import otoroshi.next.controllers.{NgPluginsController, TryItController}
 import otoroshi.next.tunnel.TunnelController
 import play.api.ApplicationLoader.Context
 import play.api.http.{DefaultHttpFilters, HttpErrorHandler, HttpRequestHandler}
@@ -28,6 +28,10 @@ import java.util.concurrent.atomic.AtomicReference
 class OtoroshiLoader extends ApplicationLoader {
 
   def load(context: Context): Application = {
+    import akka.http.scaladsl.model.OverrideHttpParser
+
+    new OverrideHttpParser()
+
     LoggerConfigurator(context.environment.classLoader).foreach {
       _.configure(context.environment, context.initialConfiguration, Map.empty)
     }

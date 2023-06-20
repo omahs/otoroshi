@@ -976,6 +976,8 @@ case class AkkWsClientStreamedResponse(
     .applyOnWithPredicate(_ == "none/none")(_ => "application/octet-stream") + _charset
     .map(v => ";charset=" + v.value)
     .getOrElse("")
+
+  println(_charset, _contentType, httpResponse.entity.contentType.mediaType.toString())
   private lazy val _bodyAsBytes: ByteString      =
     Await.result(
       bodyAsSource.runFold(ByteString.empty)(_ ++ _)(mat),
@@ -1030,6 +1032,7 @@ case class AkkWsClientRawResponse(httpResponse: HttpResponse, underlyingUrl: Str
     .applyOnWithPredicate(_ == "none/none")(_ => "application/octet-stream") + _charset
     .map(v => ";charset=" + v.value)
     .getOrElse("")
+  println(_charset, _contentType, httpResponse.entity.contentType.mediaType.toString())
   private lazy val _bodyAsBytes: ByteString      = rawbody
   private lazy val _bodyAsString: String         = rawbody.utf8String
   private lazy val _bodyAsXml: Elem              = XML.loadString(_bodyAsString)
