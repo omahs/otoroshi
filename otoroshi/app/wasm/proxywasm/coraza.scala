@@ -3,7 +3,7 @@ package otoroshi.wasm.proxywasm
 import akka.stream.Materializer
 import akka.util.ByteString
 import com.sksamuel.exts.concurrent.Futures.RichFuture
-import org.extism.sdk.parameters._
+import org.extism.sdk.otoroshi._
 import org.joda.time.DateTime
 import otoroshi.api.{GenericResourceAccessApiWithState, Resource, ResourceVersion}
 import otoroshi.env.Env
@@ -78,7 +78,7 @@ class CorazaPlugin(wasm: WasmConfig, val config: CorazaWafConfig, key: String, e
 
   def isStarted(): Boolean = started.get()
 
-  def callPluginWithoutResults(function: String, params: Parameters, data: VmData, attrs: TypedMap): Unit = {
+  def callPluginWithoutResults(function: String, params: OtoroshiParameters, data: VmData, attrs: TypedMap): Unit = {
     otoroshi.wasm.WasmUtils
       .rawExecute(
         config = wasm,
@@ -96,7 +96,7 @@ class CorazaPlugin(wasm: WasmConfig, val config: CorazaWafConfig, key: String, e
 
   def callPluginWithResults(
       function: String,
-      params: Parameters,
+      params: OtoroshiParameters,
       results: Int,
       data: VmData,
       attrs: TypedMap
@@ -121,14 +121,14 @@ class CorazaPlugin(wasm: WasmConfig, val config: CorazaWafConfig, key: String, e
   }
 
   def proxyOnContexCreate(contextId: Int, rootContextId: Int, attrs: TypedMap, rootData: VmData): Unit = {
-    val prs = new Parameters(2)
-    new IntegerParameter().addAll(prs, contextId, rootContextId)
+    val prs = new OtoroshiParameters(2)
+      .pushInts(contextId, rootContextId)
     callPluginWithoutResults("proxy_on_context_create", prs, rootData, attrs)
   }
 
   def proxyOnVmStart(attrs: TypedMap, rootData: VmData): Boolean = {
-    val prs                  = new Parameters(2)
-    new IntegerParameter().addAll(prs, 0, vmConfigurationSize)
+    val prs                  = new OtoroshiParameters(2)
+      .pushInts(0, vmConfigurationSize)
     val proxyOnVmStartAction = callPluginWithResults("proxy_on_vm_start", prs, 1, rootData, attrs).await(timeout)
     val res                  = proxyOnVmStartAction.results.getValues()(0).v.i32 != 0
     proxyOnVmStartAction.free()
@@ -136,8 +136,8 @@ class CorazaPlugin(wasm: WasmConfig, val config: CorazaWafConfig, key: String, e
   }
 
   def proxyOnConfigure(rootContextId: Int, attrs: TypedMap, rootData: VmData): Boolean = {
-    val prs                    = new Parameters(2)
-    new IntegerParameter().addAll(prs, rootContextId, pluginConfigurationSize)
+    val prs                    = new OtoroshiParameters(2)
+      .pushInts(rootContextId, pluginConfigurationSize)
     val proxyOnConfigureAction = callPluginWithResults("proxy_on_configure", prs, 1, rootData, attrs).await(timeout)
     val res                    = proxyOnConfigureAction.results.getValues()(0).v.i32 != 0
     proxyOnConfigureAction.free()
@@ -145,8 +145,7 @@ class CorazaPlugin(wasm: WasmConfig, val config: CorazaWafConfig, key: String, e
   }
 
   def proxyOnDone(rootContextId: Int, attrs: TypedMap): Boolean = {
-    val prs                    = new Parameters(1)
-    new IntegerParameter().addAll(prs, rootContextId)
+    val prs                    = new OtoroshiParameters(1).pushInt(rootContextId)
     val rootData               = VmData.empty()
     val proxyOnConfigureAction = callPluginWithResults("proxy_on_done", prs, 1, rootData, attrs).await(timeout)
     val res                    = proxyOnConfigureAction.results.getValues()(0).v.i32 != 0
@@ -155,18 +154,17 @@ class CorazaPlugin(wasm: WasmConfig, val config: CorazaWafConfig, key: String, e
   }
 
   def proxyOnDelete(rootContextId: Int, attrs: TypedMap): Unit = {
-    val prs      = new Parameters(1)
-    new IntegerParameter().addAll(prs, rootContextId)
+    val prs      = new OtoroshiParameters(1).pushInt(rootContextId)
     val rootData = VmData.empty()
     callPluginWithoutResults("proxy_on_done", prs, rootData, attrs)
   }
 
   def proxyStart(attrs: TypedMap, rootData: VmData): Unit = {
-    callPluginWithoutResults("_start", new Parameters(0), rootData, attrs)
+    callPluginWithoutResults("_start", new OtoroshiParameters(0), rootData, attrs)
   }
 
   def proxyCheckABIVersion(attrs: TypedMap, rootData: VmData): Unit = {
-    callPluginWithoutResults("proxy_abi_version_0_2_0", new Parameters(0), rootData, attrs)
+    callPluginWithoutResults("proxy_abi_version_0_2_0", new OtoroshiParameters(0), rootData, attrs)
   }
 
   def proxyOnRequestHeaders(
@@ -177,8 +175,7 @@ class CorazaPlugin(wasm: WasmConfig, val config: CorazaWafConfig, key: String, e
     val data                 = VmData.empty().withRequest(request, attrs)(env)
     val endOfStream          = 1
     val sizeHeaders          = 0
-    val prs                  = new Parameters(3)
-    new IntegerParameter().addAll(prs, contextId, sizeHeaders, endOfStream)
+    val prs                  = new OtoroshiParameters(3).pushInts(contextId, sizeHeaders, endOfStream)
     val requestHeadersAction = callPluginWithResults("proxy_on_request_headers", prs, 1, data, attrs).await(timeout)
     val result               = Result.valueToType(requestHeadersAction.results.getValues()(0).v.i32)
     requestHeadersAction.free()
@@ -206,8 +203,7 @@ class CorazaPlugin(wasm: WasmConfig, val config: CorazaWafConfig, key: String, e
     data.bodyInRef.set(body_bytes)
     val endOfStream          = 1
     val sizeBody             = body_bytes.size.bytes.length
-    val prs                  = new Parameters(3)
-    new IntegerParameter().addAll(prs, contextId, sizeBody, endOfStream)
+    val prs                  = new OtoroshiParameters(3).pushInts(contextId, sizeBody, endOfStream)
     val requestHeadersAction = callPluginWithResults("proxy_on_request_body", prs, 1, data, attrs).await(timeout)
     val result               = Result.valueToType(requestHeadersAction.results.getValues()(0).v.i32)
     requestHeadersAction.free()
@@ -232,8 +228,7 @@ class CorazaPlugin(wasm: WasmConfig, val config: CorazaWafConfig, key: String, e
     val data                 = VmData.empty().withResponse(response, attrs)(env)
     val endOfStream          = 1
     val sizeHeaders          = 0
-    val prs                  = new Parameters(3)
-    new IntegerParameter().addAll(prs, contextId, sizeHeaders, endOfStream)
+    val prs                  = new OtoroshiParameters(3).pushInts(contextId, sizeHeaders, endOfStream)
     val requestHeadersAction = callPluginWithResults("proxy_on_response_headers", prs, 1, data, attrs).await(timeout)
     val result               = Result.valueToType(requestHeadersAction.results.getValues()(0).v.i32)
     requestHeadersAction.free()
@@ -260,8 +255,7 @@ class CorazaPlugin(wasm: WasmConfig, val config: CorazaWafConfig, key: String, e
     data.bodyInRef.set(body_bytes)
     val endOfStream          = 1
     val sizeBody             = body_bytes.size.bytes.length
-    val prs                  = new Parameters(3)
-    new IntegerParameter().addAll(prs, contextId, sizeBody, endOfStream)
+    val prs                  = new OtoroshiParameters(3).pushInts(contextId, sizeBody, endOfStream)
     val requestHeadersAction = callPluginWithResults("proxy_on_response_body", prs, 1, data, attrs).await(timeout)
     val result               = Result.valueToType(requestHeadersAction.results.getValues()(0).v.i32)
     requestHeadersAction.free()
