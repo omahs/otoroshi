@@ -511,9 +511,9 @@ class WasmContextSlot(
         val res = env.metrics.withTimer("otoroshi.wasm.core.call-opa") {
           OPA.evaluate(plugin, input)
         }
-        env.metrics.withTimer("otoroshi.wasm.core.reset") {
-          plugin.reset()
-        }
+        // env.metrics.withTimer("otoroshi.wasm.core.reset") {
+        //   plugin.reset()
+        // }
         res
       } catch {
         case e: Throwable if e.getMessage.contains("wasm backtrace") =>
@@ -887,7 +887,7 @@ object WasmUtils {
   }
 
   def rawExecute(
-      config: WasmConfig,
+      _config: WasmConfig,
       defaultFunctionName: String,
       input: Option[JsValue],
       parameters: Option[OtoroshiParameters],
@@ -897,6 +897,7 @@ object WasmUtils {
       addHostFunctions: Seq[OtoroshiHostFunction[_ <: OtoroshiHostUserData]]
   )(implicit env: Env): Future[Either[JsValue, (String, ResultsWrapper)]] =
     env.metrics.withTimerAsync("otoroshi.wasm.core.raw-execute") {
+      val config = if (_config.opa) _config.copy(lifetime = WasmVmLifetime.Invocation) else _config
       WasmUtils.debugLog.debug("execute")
       val pluginId = config.source.kind match {
         case WasmSourceKind.Local => {

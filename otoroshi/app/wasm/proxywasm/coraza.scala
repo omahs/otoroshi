@@ -81,7 +81,7 @@ class CorazaPlugin(wasm: WasmConfig, val config: CorazaWafConfig, key: String, e
   def callPluginWithoutResults(function: String, params: OtoroshiParameters, data: VmData, attrs: TypedMap): Unit = {
     otoroshi.wasm.WasmUtils
       .rawExecute(
-        config = wasm,
+        _config = wasm,
         defaultFunctionName = function,
         input = None,
         parameters = params.some,
@@ -103,7 +103,7 @@ class CorazaPlugin(wasm: WasmConfig, val config: CorazaWafConfig, key: String, e
   ): Future[ResultsWrapper] = {
     otoroshi.wasm.WasmUtils
       .rawExecute(
-        config = wasm,
+        _config = wasm,
         defaultFunctionName = function,
         input = None,
         parameters = params.some,
@@ -402,7 +402,7 @@ class NgCorazaWAF extends NgAccessValidator with NgRequestTransformer {
     //println(s"get plugin: ${key}")
     val plugin          = plugins.getOrUpdate(key) {
       //println(s"create plugin: ${key}")
-      val url = s"http://127.0.0.1:${env.httpPort}/__otoroshi_assets/wasm/coraza.wasm?$key"
+      val url = s"http://127.0.0.1:${env.httpPort}/__otoroshi_assets/wasm/coraza-proxy-wasm-v0.1.0.wasm?$key"
       new CorazaPlugin(
         WasmConfig(
           source = WasmSource(
