@@ -460,7 +460,7 @@ class WasmContextSlot(
         context.foreach(ctx => WasmContextSlot.setCurrentContext(ctx))
         if (WasmUtils.logger.isDebugEnabled) WasmUtils.logger.debug(s"calling instance $id-$instance")
         WasmUtils.debugLog.debug(s"calling '${functionName}' on instance '$id-$instance'")
-        val res: Either[JsValue, (String, ResultsWrapper)] = env.metrics.withTimer("otoroshi.wasm.core.call") {
+        val res: Either[JsValue, (String, ResultsWrapper)] = env.metrics.withTimer("otoroshi.wasm.core.call", display = true) {
           // TODO: need to split this !!
           (input, parameters, resultSize) match {
             case (_, Some(p), None)           =>
@@ -478,7 +478,9 @@ class WasmContextSlot(
           }
         }
         env.metrics.withTimer("otoroshi.wasm.core.reset") {
-          plugin.reset()
+          if (cfg.lifetime == WasmVmLifetime.Forever) {
+            plugin.reset()
+          }
         }
         env.metrics.withTimer("otoroshi.wasm.core.count-thunks") {
           WasmUtils.logger.debug(s"thunks: ${functions.size}")
@@ -746,20 +748,25 @@ object WasmUtils {
   }._2
 
   private[wasm] def internalCreateTemplate(config: WasmConfig, wasm: ByteString, env: Env) =
-    env.metrics.withTimer("otoroshi.wasm.core.create-plugin.template") {
-      val resolver = new WasmSourceResolver()
-      val source = resolver.resolve("wasm", wasm.toByteBuffer.array())
+    env.metrics.withTimer("otoroshi.wasm.core.create-plugin.template", display = true) {
 
-      val hash = source.hash()
+      val hash = wasm.sha256
       templates.get(hash) match {
         case Some(template) => template
-        case None           => new OtoroshiTemplate(engine, hash, new Manifest(
-          Seq[org.extism.sdk.wasm.WasmSource](source).asJava,
-          new MemoryOptions(config.memoryPages),
-          config.config.asJava,
-          config.allowedHosts.asJava,
-          config.allowedPaths.asJava
-        ))
+        case None           =>
+          val resolver = new WasmSourceResolver()
+          val source = resolver.resolve("wasm", wasm.toByteBuffer.array())
+
+          val template = new OtoroshiTemplate(engine, hash, new Manifest(
+            Seq[org.extism.sdk.wasm.WasmSource](source).asJava,
+            new MemoryOptions(config.memoryPages),
+            config.config.asJava,
+            config.allowedHosts.asJava,
+            config.allowedPaths.asJava
+          ))
+          templates.put(hash, template)
+
+          template
       }
     }
 
@@ -777,7 +784,7 @@ object WasmUtils {
       val template                                          = internalCreateTemplate(config, wasm, env)
       val functions: Array[OtoroshiHostFunction[_ <: OtoroshiHostUserData]] =
         HostFunctions.getFunctions(config, pluginId, attrsOpt) ++ addHostFunctions
-      val plugin                                            = env.metrics.withTimer("otoroshi.wasm.core.create-plugin.plugin") {
+      val plugin                                            = env.metrics.withTimer("otoroshi.wasm.core.create-plugin.plugin", display = true) {
         template.instantiate(
           engine,
           functions,
