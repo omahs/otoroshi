@@ -130,40 +130,64 @@ const removeAfterLastHyphen = (str) => {
   return str.substring(0, str.lastIndexOf('-'))
 }
 
+const cleanWasmFile = (isRustBuild, buildFolder, release, wasmName) => {
+  return new Promise(resolve => {
+    const filepath = isRustBuild ?
+      path.join(buildFolder, 'target', 'wasm32-unknown-unknown', 'release',
+        (release ?
+          `${removeAfterLastHyphen(wasmName)}.wasm` :
+          `${removeAfterLastHyphen(removeAfterLastHyphen(wasmName))}.wasm`).replace(/-/g, "_")
+      ) :
+      path.join(buildFolder, `${wasmName}.wasm`)
+
+    const child = spawn('wasm-gc', [filepath], { cwd: buildFolder })
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        console.log("GC done")
+      }
+      resolve()
+    });
+  });
+}
+
 const onSuccessProcess = (plugin, user, buildFolder, logsFolder, wasmName, zipHash, resolve, reject, code, isRustBuild, release) => {
   WebSocket.emit(plugin, release, "Build done.\n")
   try {
     const newFilename = `${wasmName}.wasm`
     WebSocket.emit(plugin, "PACKAGE", "Starting package ...\n")
-    Promise.all([
-      saveWasmFile(
-        plugin,
-        newFilename,
-        isRustBuild ?
-          path.join(buildFolder, 'target', 'wasm32-unknown-unknown', 'release',
-            (release ?
-              `${removeAfterLastHyphen(wasmName)}.wasm` :
-              `${removeAfterLastHyphen(removeAfterLastHyphen(wasmName))}.wasm`).replace(/-/g, "_")
-          ) :
-          //path.join(buildFolder, 'target', 'wasm32-wasi', 'release', `${wasmName.substring(0, wasmName.lastIndexOf('-'))}.wasm`) :
-          path.join(buildFolder, `${wasmName}.wasm`)
-      ),
-      saveLogsFile(
-        plugin,
-        `${plugin}-logs.zip`,
-        logsFolder
-      ),
-      updateHashOfPlugin(user, plugin, zipHash, newFilename)
-    ])
+    cleanWasmFile(isRustBuild, buildFolder, release, wasmName)
       .then(() => {
-        WebSocket.emit(plugin, "PACKAGE", "Informations has been updated\n")
-        FileSystem.cleanFolders(buildFolder, logsFolder)
-          .then(resolve)
-      })
-      .catch(err => {
-        log.error(`Build failed: ${err}`)
-        onFailedProcess([buildFolder, logsFolder], code, reject)
-      })
+        Promise.all([
+          saveWasmFile(
+            plugin,
+            newFilename,
+            isRustBuild ?
+              path.join(buildFolder, 'target', 'wasm32-unknown-unknown', 'release',
+                (release ?
+                  `${removeAfterLastHyphen(wasmName)}.wasm` :
+                  `${removeAfterLastHyphen(removeAfterLastHyphen(wasmName))}.wasm`).replace(/-/g, "_")
+              ) :
+              //path.join(buildFolder, 'target', 'wasm32-wasi', 'release', `${wasmName.substring(0, wasmName.lastIndexOf('-'))}.wasm`) :
+              path.join(buildFolder, `${wasmName}.wasm`)
+          ),
+          saveLogsFile(
+            plugin,
+            `${plugin}-logs.zip`,
+            logsFolder
+          ),
+          updateHashOfPlugin(user, plugin, zipHash, newFilename)
+        ])
+          .then(() => {
+            WebSocket.emit(plugin, "PACKAGE", "Informations has been updated\n")
+            FileSystem.cleanFolders(buildFolder, logsFolder)
+              .then(resolve)
+          })
+          .catch(err => {
+            log.error(`Build failed: ${err}`)
+            onFailedProcess([buildFolder, logsFolder], code, reject)
+          })
+      });
   } catch (err) {
     log.error(`Build failed: ${err}`)
     onFailedProcess([buildFolder, logsFolder], code, reject)
