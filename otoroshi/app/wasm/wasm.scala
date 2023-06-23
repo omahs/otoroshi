@@ -460,7 +460,7 @@ class WasmContextSlot(
         context.foreach(ctx => WasmContextSlot.setCurrentContext(ctx))
         if (WasmUtils.logger.isDebugEnabled) WasmUtils.logger.debug(s"calling instance $id-$instance")
         WasmUtils.debugLog.debug(s"calling '${functionName}' on instance '$id-$instance'")
-        val res: Either[JsValue, (String, ResultsWrapper)] = env.metrics.withTimer("otoroshi.wasm.core.call", display = true) {
+        val res: Either[JsValue, (String, ResultsWrapper)] = env.metrics.withTimer("otoroshi.wasm.core.call") {
           // TODO: need to split this !!
           (input, parameters, resultSize) match {
             case (_, Some(p), None)           =>
@@ -748,12 +748,17 @@ object WasmUtils {
   }._2
 
   private[wasm] def internalCreateTemplate(config: WasmConfig, wasm: ByteString, env: Env) =
-    env.metrics.withTimer("otoroshi.wasm.core.create-plugin.template", display = true) {
+    env.metrics.withTimer("otoroshi.wasm.core.create-plugin.template", display = false) {
 
-      val hash = wasm.sha256
-      templates.get(hash) match {
+    val hash = java.security.MessageDigest.getInstance("SHA-256")
+    .digest(wasm.toArray)
+    .map("%02x".format(_)).mkString
+      // val hash = wasm.sha256
+    templates.get(hash) match {
         case Some(template) => template
         case None           =>
+          println("##### need to create the template #####")
+          println(hash, templates.keySet)
           val resolver = new WasmSourceResolver()
           val source = resolver.resolve("wasm", wasm.toByteBuffer.array())
 
@@ -784,7 +789,7 @@ object WasmUtils {
       val template                                          = internalCreateTemplate(config, wasm, env)
       val functions: Array[OtoroshiHostFunction[_ <: OtoroshiHostUserData]] =
         HostFunctions.getFunctions(config, pluginId, attrsOpt) ++ addHostFunctions
-      val plugin                                            = env.metrics.withTimer("otoroshi.wasm.core.create-plugin.plugin", display = true) {
+      val plugin                                            = env.metrics.withTimer("otoroshi.wasm.core.create-plugin.plugin") {
         template.instantiate(
           engine,
           functions,
