@@ -436,6 +436,69 @@ case class ResultsWrapper(results: OtoroshiResults, pluginOpt: Option[OtoroshiIn
   }
 }
 
+sealed trait WasmFunctionParameters {
+  def functionName: String
+  def input: Option[String] = None
+  def parameters: Option[OtoroshiParameters] = None
+  def resultSize: Option[Int] = None
+  def call(plugin: OtoroshiInstance): Either[JsValue, (String, ResultsWrapper)]
+} 
+
+object WasmFunctionParameters {
+  def from(functionName: String, input: Option[String], parameters: Option[OtoroshiParameters], resultSize: Option[Int]) = {
+    (input, parameters, resultSize) match {
+      case (_, Some(p), Some(s))        => BothParamsResults(functionName, p, s)
+      case (_, Some(p), None)           => NoResult(functionName, p) 
+      case (_, None, Some(s))           => NoParams(functionName, s)
+      case (Some(in), None, None)       => ExtismFuntionCall(functionName, in)
+      case _                            => UnknownCombination() 
+    }
+  }
+
+  case class UnknownCombination(functionName: String = "unknown") extends WasmFunctionParameters {
+    override def call(plugin: OtoroshiInstance): Either[JsValue, (String, ResultsWrapper)] = {
+      Left(Json.obj("error" -> "bad call combination"))
+    }
+  }
+
+  case class NoResult(fctName: String, prms: OtoroshiParameters) extends WasmFunctionParameters {
+    def functionName: String = fctName
+    override def parameters: Option[OtoroshiParameters] = Some(prms)
+    override def call(plugin: OtoroshiInstance): Either[JsValue, (String, ResultsWrapper)] = {
+      plugin.callWithoutResults(functionName, parameters.get)
+              Right[JsValue, (String, ResultsWrapper)](("", ResultsWrapper(new OtoroshiResults(0), plugin)))
+    }
+  }
+  case class NoParams(fctName: String, resSize: Int) extends WasmFunctionParameters {
+    def functionName: String = fctName
+    override def resultSize: Option[Int] = Some(resSize)
+    override def call(plugin: OtoroshiInstance): Either[JsValue, (String, ResultsWrapper)] = {
+      plugin.callWithoutParams(functionName, resultSize.get)
+        .right
+        .map(_ => ("", ResultsWrapper(new OtoroshiResults(0), plugin)))
+    }
+  }
+  case class BothParamsResults(fctName: String, prms: OtoroshiParameters, resSize: Int)  extends WasmFunctionParameters {
+    def functionName: String = fctName
+    override def parameters: Option[OtoroshiParameters] = Some(prms)
+    override def resultSize: Option[Int] = Some(resSize)
+    override def call(plugin: OtoroshiInstance): Either[JsValue, (String, ResultsWrapper)] = {
+        plugin.call(functionName, parameters.get, resultSize.get)
+        .right
+        .map(res => ("", ResultsWrapper(res, plugin)))
+    }
+  }
+  case class ExtismFuntionCall(fctName: String, in: String)  extends WasmFunctionParameters {
+    def functionName: String = fctName
+    override def input: Option[String] = Some(in)
+    override def call(plugin: OtoroshiInstance): Either[JsValue, (String, ResultsWrapper)] = {
+      plugin.extismCall(functionName, input.get.getBytes(StandardCharsets.UTF_8))
+        .right
+        .map(str => (str, ResultsWrapper(new OtoroshiResults(0), plugin)))
+    }
+  }
+}
+
 class WasmContextSlot(
     id: String,
     instance: Int,
@@ -448,41 +511,23 @@ class WasmContextSlot(
     functions: Array[OtoroshiHostFunction[_ <: OtoroshiHostUserData]]
 ) {
 
-  def callSync(
-                functionName: String,
-                input: Option[String],
-                parameters: Option[OtoroshiParameters],
-                resultSize: Option[Int],
-                context: Option[VmData]
-  )(implicit env: Env, ec: ExecutionContext): Either[JsValue, (String, ResultsWrapper)] = {
+  def callSync(wasmFunctionParameters: WasmFunctionParameters, context: Option[VmData])
+    (implicit env: Env, ec: ExecutionContext): Either[JsValue, (String, ResultsWrapper)] = {
     if (closed.get()) {
       val plug = WasmUtils.pluginCache.apply(s"$id-$instance")
-      plug.callSync(functionName, input, parameters, resultSize, context)
+      plug.callSync(wasmFunctionParameters, context)
     } else {
       try {
         context.foreach(ctx => WasmContextSlot.setCurrentContext(ctx))
-        if (WasmUtils.logger.isDebugEnabled) WasmUtils.logger.debug(s"calling instance $id-$instance")
-        WasmUtils.debugLog.debug(s"calling '${functionName}' on instance '$id-$instance'")
-
-        println(s"FUNCTION CALLED $functionName")
+        if (WasmUtils.logger.isDebugEnabled) {
+          WasmUtils.logger.debug(s"calling instance $id-$instance")
+        }
+        WasmUtils.debugLog.debug(s"calling '${wasmFunctionParameters.functionName}' on instance '$id-$instance'")
 
         val res: Either[JsValue, (String, ResultsWrapper)] = env.metrics.withTimer("otoroshi.wasm.core.call", display = true) {
-          // TODO: need to split this !!
-          (input, parameters, resultSize) match {
-            case (_, Some(p), None)           =>
-              plugin.callWithoutResults(functionName, p)
-              Right[JsValue, (String, ResultsWrapper)](("", ResultsWrapper(new OtoroshiResults(0), plugin)))
-            case (_, Some(p), Some(s))        =>
-              plugin.call(functionName, p, s).right.map(res => ("", ResultsWrapper(res, plugin)))
-            case (_, None, Some(s))           =>
-              plugin.callWithoutParams(functionName, s).right.map(_ => ("", ResultsWrapper(new OtoroshiResults(0), plugin)))
-            case (Some(in), None, None)       =>
-              plugin.extismCall(functionName, in.getBytes(StandardCharsets.UTF_8))
-                .right
-                .map(str => (str, ResultsWrapper(new OtoroshiResults(0), plugin)))
-            case _                            => Left(Json.obj("error" -> "bad call combination"))
-          }
+          wasmFunctionParameters.call(plugin)
         }
+
         env.metrics.withTimer("otoroshi.wasm.core.reset") {
           if (cfg.lifetime == WasmVmLifetime.Forever) {
             plugin.reset()
@@ -494,7 +539,7 @@ class WasmContextSlot(
         res
       } catch {
         case e: Throwable if e.getMessage.contains("wasm backtrace") =>
-          WasmUtils.logger.error(s"error while invoking wasm function '${functionName}'", e)
+          WasmUtils.logger.error(s"error while invoking wasm function '${wasmFunctionParameters.functionName}'", e)
           Json
             .obj(
               "error"             -> "wasm_error",
@@ -502,7 +547,7 @@ class WasmContextSlot(
             )
             .left
         case e: Throwable                                            =>
-          WasmUtils.logger.error(s"error while invoking wasm function '${functionName}'", e)
+          WasmUtils.logger.error(s"error while invoking wasm function '${wasmFunctionParameters.functionName}'", e)
           Json.obj("error" -> "wasm_error", "error_description" -> JsString(e.getMessage)).left
       } finally {
         context.foreach(ctx => WasmContextSlot.clearCurrentContext())
@@ -549,7 +594,7 @@ class WasmContextSlot(
     val promise = Promise.apply[Either[JsValue, (String, ResultsWrapper)]]()
     WasmUtils
       .getInvocationQueueFor(id, instance)
-      .offer(WasmAction.WasmInvocation(() => callSync(functionName, input, parameters, resultSize, context), promise))
+      .offer(WasmAction.WasmInvocation(() => callSync(WasmFunctionParameters.from(functionName, input, parameters, resultSize), context), promise))
     promise.future
   }
 
