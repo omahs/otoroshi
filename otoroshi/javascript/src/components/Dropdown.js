@@ -4,8 +4,9 @@ export function Dropdown({ children, className = '', style = {}, buttonStyle }) 
   return (
     <div className={`dropdown ${className}`} style={style}>
       <button
-        className="btn btn-sm toggle-form-buttons d-flex align-items-center dark-background h-100"
+        className="btn btn-sm toggle-form-buttons d-flex align-items-center dark-background"
         style={{
+          height: '100%',
           backgroundColor: 'var(--bg-color_level2)',
           color: 'var(--color_level2)',
           ...(buttonStyle || {}),

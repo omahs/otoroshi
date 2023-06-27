@@ -329,6 +329,7 @@ case class WasmConfig(
     lifetime: WasmVmLifetime = WasmVmLifetime.Forever,
     wasi: Boolean = false,
     opa: Boolean = false,
+    importDefaultHostFunctions: Boolean = true,
     instances: Int = 1,
     authorizations: WasmAuthorizations = WasmAuthorizations()
 ) extends NgPluginConfig {
@@ -341,6 +342,7 @@ case class WasmConfig(
     "allowedPaths"   -> allowedPaths,
     "wasi"           -> wasi,
     "opa"            -> opa,
+    "importDefaultHostFunctions" -> importDefaultHostFunctions,
     "lifetime"       -> lifetime.json,
     "authorizations" -> authorizations.json,
     "instances"      -> instances
@@ -384,6 +386,7 @@ object WasmConfig {
         allowedPaths = (json \ "allowedPaths").asOpt[Map[String, String]].getOrElse(Map.empty),
         wasi = (json \ "wasi").asOpt[Boolean].getOrElse(false),
         opa = (json \ "opa").asOpt[Boolean].getOrElse(false),
+        importDefaultHostFunctions = (json \ "importDefaultHostFunctions").asOpt[Boolean].getOrElse(true),
         lifetime = json
           .select("lifetime")
           .asOpt[String]
@@ -460,7 +463,10 @@ class WasmContextSlot(
         context.foreach(ctx => WasmContextSlot.setCurrentContext(ctx))
         if (WasmUtils.logger.isDebugEnabled) WasmUtils.logger.debug(s"calling instance $id-$instance")
         WasmUtils.debugLog.debug(s"calling '${functionName}' on instance '$id-$instance'")
-        val res: Either[JsValue, (String, ResultsWrapper)] = env.metrics.withTimer("otoroshi.wasm.core.call") {
+
+        println(s"FUNCTION CALLED $functionName")
+
+        val res: Either[JsValue, (String, ResultsWrapper)] = env.metrics.withTimer("otoroshi.wasm.core.call", display = true) {
           // TODO: need to split this !!
           (input, parameters, resultSize) match {
             case (_, Some(p), None)           =>
@@ -748,17 +754,15 @@ object WasmUtils {
   }._2
 
   private[wasm] def internalCreateTemplate(config: WasmConfig, wasm: ByteString, env: Env) =
-    env.metrics.withTimer("otoroshi.wasm.core.create-plugin.template", display = false) {
+    env.metrics.withTimer("otoroshi.wasm.core.create-plugin.template", display = true) {
 
     val hash = java.security.MessageDigest.getInstance("SHA-256")
-    .digest(wasm.toArray)
-    .map("%02x".format(_)).mkString
-      // val hash = wasm.sha256
+      .digest(wasm.toArray)
+      .map("%02x".format(_)).mkString
+
     templates.get(hash) match {
         case Some(template) => template
         case None           =>
-          println("##### need to create the template #####")
-          println(hash, templates.keySet)
           val resolver = new WasmSourceResolver()
           val source = resolver.resolve("wasm", wasm.toByteBuffer.array())
 
@@ -783,13 +787,16 @@ object WasmUtils {
       attrsOpt: Option[TypedMap],
       addHostFunctions: Seq[OtoroshiHostFunction[_ <: OtoroshiHostUserData]]
   )(implicit env: Env, ec: ExecutionContext): WasmContextSlot =
-    env.metrics.withTimer("otoroshi.wasm.core.act-create-plugin") {
+    env.metrics.withTimer("otoroshi.wasm.core.act-create-plugin", display = true) {
       if (WasmUtils.logger.isDebugEnabled)
         WasmUtils.logger.debug(s"creating wasm plugin instance for ${pluginId}")
       val template                                          = internalCreateTemplate(config, wasm, env)
-      val functions: Array[OtoroshiHostFunction[_ <: OtoroshiHostUserData]] =
-        HostFunctions.getFunctions(config, pluginId, attrsOpt) ++ addHostFunctions
-      val plugin                                            = env.metrics.withTimer("otoroshi.wasm.core.create-plugin.plugin") {
+      val functions: Array[OtoroshiHostFunction[_ <: OtoroshiHostUserData]] = if(config.importDefaultHostFunctions) {
+        HostFunctions.getFunctions(config, pluginId, attrsOpt) ++ addHostFunctions 
+      } else {
+        addHostFunctions.toArray[OtoroshiHostFunction[_ <: OtoroshiHostUserData]]
+      }
+      val plugin                                            = env.metrics.withTimer("otoroshi.wasm.core.create-plugin.plugin", display = true) {
         template.instantiate(
           engine,
           functions,
@@ -822,8 +829,7 @@ object WasmUtils {
       ctx: Option[VmData],
       addHostFunctions: Seq[OtoroshiHostFunction[_ <: OtoroshiHostUserData]]
   )(implicit env: Env, ec: ExecutionContext): Future[Either[JsValue, (String, ResultsWrapper)]] =
-    env.metrics.withTimerAsync("otoroshi.wasm.core.call-wasm") {
-
+    env.metrics.withTimerAsync("otoroshi.wasm.core.call-wasm", display = true) {
       WasmUtils.debugLog.debug("callWasm")
 
       val functionName = config.functionName.filter(_.nonEmpty).getOrElse(defaultFunctionName)
@@ -868,7 +874,7 @@ object WasmUtils {
           val slot    = context.get(pluginId) match {
             case None         => {
               val plugin = createPlugin()
-              if (config.lifetime == WasmVmLifetime.Invocation) context.put(pluginId, plugin)
+              if (config.lifetime == WasmVmLifetime.Request) context.put(pluginId, plugin)
               plugin
             }
             case Some(plugin) => plugin
@@ -908,8 +914,8 @@ object WasmUtils {
       ctx: Option[VmData],
       addHostFunctions: Seq[OtoroshiHostFunction[_ <: OtoroshiHostUserData]]
   )(implicit env: Env): Future[Either[JsValue, (String, ResultsWrapper)]] =
-    env.metrics.withTimerAsync("otoroshi.wasm.core.raw-execute") {
-      val config = if (_config.opa) _config.copy(lifetime = WasmVmLifetime.Invocation) else _config
+    env.metrics.withTimerAsync("otoroshi.wasm.core.raw-execute", display = true) {
+      val config = if (_config.opa) _config.copy(lifetime = WasmVmLifetime.Request) else _config
       WasmUtils.debugLog.debug("execute")
       val pluginId = config.source.kind match {
         case WasmSourceKind.Local => {

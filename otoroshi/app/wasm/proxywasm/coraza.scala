@@ -6,6 +6,7 @@ import com.sksamuel.exts.concurrent.Futures.RichFuture
 import org.extism.sdk.otoroshi._
 import org.joda.time.DateTime
 import otoroshi.api.{GenericResourceAccessApiWithState, Resource, ResourceVersion}
+import org.extism.sdk.otoroshi.{OtoroshiTemplate}
 import otoroshi.env.Env
 import otoroshi.events.AnalyticEvent
 import otoroshi.models.{EntityLocation, EntityLocationSupport}
@@ -139,6 +140,7 @@ class CorazaPlugin(wasm: WasmConfig, val config: CorazaWafConfig, key: String, e
     val prs                    = new OtoroshiParameters(2)
       .pushInts(rootContextId, pluginConfigurationSize)
     val proxyOnConfigureAction = callPluginWithResults("proxy_on_configure", prs, 1, rootData, attrs).await(timeout)
+
     val res                    = proxyOnConfigureAction.results.getValues()(0).v.i32 != 0
     proxyOnConfigureAction.free()
     res
@@ -399,9 +401,8 @@ class NgCorazaWAF extends NgAccessValidator with NgRequestTransformer {
     val config          = env.adminExtensions.extension[CorazaWafAdminExtension].get.states.config(ref).get
     val configHash      = config.json.stringify.sha512
     val key             = s"ref=${ref}&hash=${configHash}"
-    //println(s"get plugin: ${key}")
+
     val plugin          = plugins.getOrUpdate(key) {
-      //println(s"create plugin: ${key}")
       val url = s"http://127.0.0.1:${env.httpPort}/__otoroshi_assets/wasm/coraza-proxy-wasm-v0.1.0.wasm?$key"
       new CorazaPlugin(
         WasmConfig(
@@ -411,7 +412,9 @@ class NgCorazaWAF extends NgAccessValidator with NgRequestTransformer {
           ),
           memoryPages = 1000,
           functionName = None,
-          wasi = true
+          wasi = true,
+          lifetime = WasmVmLifetime.Request,
+          importDefaultHostFunctions = false
         ),
         config,
         url,
@@ -424,6 +427,7 @@ class NgCorazaWAF extends NgAccessValidator with NgRequestTransformer {
       oldVersions.foreach(_.stop(attrs))
       oldVersionsKeys.foreach(plugins.remove)
     }
+
     plugin
   }
 
@@ -441,6 +445,18 @@ class NgCorazaWAF extends NgAccessValidator with NgRequestTransformer {
   override def afterRequest(
       ctx: NgAfterRequestContext
   )(implicit env: Env, ec: ExecutionContext, mat: Materializer): Future[Unit] = {
+    val config          = ctx.cachedConfig(internalName)(NgCorazaWAFConfig.format).getOrElse(NgCorazaWAFConfig("none"))
+    val ref: String     = config.ref
+    val extensionConfig = env.adminExtensions.extension[CorazaWafAdminExtension].get.states.config(ref).get
+    val configHash      = extensionConfig.json.stringify.sha512
+    val key             = s"ref=${ref}&hash=${configHash}"
+
+    plugins.get(key)
+      .map(plugin => {
+      plugin.stop(ctx.attrs)
+      plugins.remove(key)
+    })
+
     ().vfuture
   }
 
