@@ -93,6 +93,10 @@ const schema = {
       options: ['Invocation', 'Request', 'Forever'].map((v) => ({ label: v, value: v })),
     },
   },
+  instances:  {
+    type: "number",
+    label: "Number of instances"
+  },
   opa: {
     type: 'box-bool',
     label: 'OPA',
@@ -224,7 +228,7 @@ export default {
       v.source.kind.toLowerCase() !== 'local' && {
         type: 'group',
         name: 'Advanced settings',
-        fields: ['memoryPages', 'config', 'allowedHosts', 'allowedPaths'],
+        fields: ['memoryPages', 'config', 'instances', 'allowedHosts', 'allowedPaths'],
       },
     ].filter((v) => !!v),
 };

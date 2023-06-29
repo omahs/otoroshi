@@ -3,7 +3,7 @@ package otoroshi.next.plugins
 import otoroshi.models.{ApiKey, ApikeyTuple, JwtInjection}
 import otoroshi.next.models._
 import otoroshi.next.proxy.NgExecutionReport
-import otoroshi.wasm.WasmContext
+import otoroshi.wasm.{WasmContext, WasmContextSlotId}
 import play.api.libs.typedmap.TypedKey
 import play.api.mvc.Result
 
@@ -24,5 +24,6 @@ object Keys {
   val JwtInjectionKey            = TypedKey[JwtInjection]("otoroshi.next.core.JwtInjection")
   val ResultTransformerKey       = TypedKey[Function[Result, Future[Result]]]("otoroshi.next.core.ResultTransformer")
   val WasmContextKey             = TypedKey[WasmContext]("otoroshi.next.core.WasmContext")
+  val WasmSlotIdKey              = TypedKey[(String, WasmContextSlotId)]("otoroshi.next.core.WasmContextSlotId") // TODO - test
   val ResponseAddHeadersKey      = TypedKey[Seq[(String, String)]]("otoroshi.next.core.ResponseAddHeaders")
 }

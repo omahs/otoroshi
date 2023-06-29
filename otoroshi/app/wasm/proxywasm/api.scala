@@ -8,6 +8,7 @@ import otoroshi.next.plugins.api.NgPluginHttpResponse
 import otoroshi.utils.TypedMap
 import otoroshi.utils.http.RequestImplicits._
 import otoroshi.utils.syntax.implicits._
+import otoroshi.wasm.WasmContextSlotId
 import play.api.libs.json.JsValue
 import play.api.mvc
 import play.api.mvc.RequestHeader
@@ -86,7 +87,8 @@ case class VmData(
     tickPeriod: Int = -1,
     respRef: AtomicReference[play.api.mvc.Result],
     bodyInRef: AtomicReference[ByteString],
-    bodyOutRef: AtomicReference[ByteString]
+    bodyOutRef: AtomicReference[ByteString],
+    slotId: WasmContextSlotId = WasmContextSlotId(-1)
 ) extends OtoroshiHostUserData {
   def withRequest(request: RequestHeader, attrs: TypedMap)(implicit env: Env): VmData = {
     VmData
