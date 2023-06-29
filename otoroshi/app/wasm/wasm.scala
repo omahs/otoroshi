@@ -932,8 +932,8 @@ def needsUpdate(incomingWasmConfig: WasmConfig, incomingWasm: ByteString, curren
   configHasChanged || wasmHasChanged
 }
 
-def updateTemplate(template: WasmOtoroshiTemplate, poolId: String, config: WasmConfig, wasm: ByteString)
-                  (implicit env: Env, ec: ExecutionContext) = {
+private def updateTemplate(template: WasmOtoroshiTemplate, poolId: String, config: WasmConfig, wasm: ByteString)
+                          (implicit env: Env, ec: ExecutionContext) = {
   if (template.updating.compareAndSet(false, true)) {
     val currentPool = poolCache(poolId)
 
