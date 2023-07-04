@@ -48,6 +48,7 @@ import play.api.libs.ws._
 import play.api.libs.ws.ahc._
 import play.shaded.ahc.org.asynchttpclient.DefaultAsyncHttpClient
 import play.twirl.api.Html
+import utils.EcoMetrics
 
 import java.io.File
 import java.lang.management.ManagementFactory
@@ -706,6 +707,7 @@ class Env(
 
   lazy val statsd  = new StatsdWrapper(otoroshiActorSystem, this)
   lazy val metrics = new Metrics(this, lifecycle)
+  lazy val ecoMetrics = new EcoMetrics(this)
   lazy val pki     = new BouncyCastlePki(snowflakeGenerator, this)
 
   lazy val tunnelManager = new TunnelManager(this)

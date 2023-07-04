@@ -1573,6 +1573,10 @@ const possibleExporterConfigFormValues = {
     flow: [],
     schema: {},
   },
+  ecometrics: {
+    flow: [],
+    schema: {},
+  },
   custom: {
     flow: ['ref', 'config'],
     schema: {

@@ -122,6 +122,10 @@ case class ConsoleSettings() extends Exporter {
   override def toJson: JsValue = Json.obj()
 }
 
+case class EcoMetricsSettings() extends Exporter {
+  override def toJson: JsValue = Json.obj()
+}
+
 case class MetricsSettings(labels: Map[String, String] = Map()) extends Exporter {
   override def toJson: JsValue =
     Json.obj(
@@ -227,6 +231,7 @@ object DataExporterConfig {
             case "console"       => ConsoleSettings()
             case "metrics"       => MetricsSettings((json \ "config" \ "labels").as[Map[String, String]])
             case "custommetrics" => CustomMetricsSettings.format.reads((json \ "config").as[JsObject]).get
+            case "ecometrics"    => EcoMetricsSettings()
             case "wasm"          => WasmExporterSettings.format.reads((json \ "config").as[JsObject]).get
             case _               => throw new RuntimeException("Bad config type")
           }
@@ -276,6 +281,10 @@ object DataExporterConfigType {
     def name: String = "goreplays3"
   }
 
+  case object EcoMetricsConfigType extends DataExporterConfigType {
+    def name: String = "ecometrics"
+  }
+
   case object Mailer extends DataExporterConfigType {
     def name: String = "mailer"
   }
@@ -320,6 +329,7 @@ object DataExporterConfigType {
       case "console"       => Console
       case "metrics"       => Metrics
       case "custommetrics" => CustomMetrics
+      case "ecometrics"    => EcoMetricsConfigType
       case "wasm"          => Wasm
       case _               => None
     }
@@ -375,6 +385,7 @@ case class DataExporterConfig(
       case c: GenericMailerSettings  => new GenericMailerExporter(this)
       case c: ExporterRef            => new CustomExporter(this)
       case c: ConsoleSettings        => new ConsoleExporter(this)
+      case c: EcoMetricsSettings     => new EcoMetricsExporter(this)
       case c: MetricsSettings        => new MetricsExporter(this)
       case c: CustomMetricsSettings  => new CustomMetricsExporter(this)
       case c: WasmExporterSettings   => new WasmExporter(this)

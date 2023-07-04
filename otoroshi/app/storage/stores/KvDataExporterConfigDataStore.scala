@@ -234,6 +234,19 @@ class DataExporterConfigDataStore(redisCli: RedisLike, env: Env) extends RedisLi
           filtering = DataExporterConfigFiltering(),
           config = CustomMetricsSettings()
         )
+      case Some("ecometrics")  =>
+        DataExporterConfig(
+          typ = DataExporterConfigType.EcoMetricsConfigType,
+          id = IdGenerator.namedId("data_exporter", env),
+          name = "New eco metrics exporter config",
+          desc = "New eco metrics exporter config",
+          metadata = Map.empty,
+          enabled = false,
+          location = EntityLocation(),
+          projection = Json.obj(),
+          filtering = DataExporterConfigFiltering(),
+          config = CustomMetricsSettings()
+        )
       case _                      =>
         DataExporterConfig(
           typ = DataExporterConfigType.Mailer,

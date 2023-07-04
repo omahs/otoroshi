@@ -1294,3 +1294,37 @@ class DataExporterUpdateJob extends Job {
     FastFuture.successful(env.otoroshiEventsActor ! UpdateExporters)
   }
 }
+
+class EcoMetricsExporter(_config: DataExporterConfig)(implicit ec: ExecutionContext, env: Env)
+  extends DefaultDataExporter(_config)(ec, env) {
+
+  override def send(events: Seq[JsValue]): Future[ExportResult] = {
+    events.foreach { event =>
+      if ((event \ "@type").as[String] == "GatewayEvent") {
+        Try {
+          val duration = (event \ "duration").asOpt[Long].getOrElse(0L)
+          val dataIn = (event \ "data" \ "dataIn").asOpt[Long].getOrElse(0L)
+          val dataOut = (event \ "data" \ "dataOut").asOpt[Long].getOrElse(0L)
+          val overheadWoCb = (event \ "overheadWoCb").asOpt[Long].getOrElse(0L)
+          val cbDuration = (event \ "cbDuration").asOpt[Long].getOrElse(0L)
+          val overhead = (event \ "overhead").asOpt[Long].getOrElse(0L)
+          val serviceId = (event \ "@serviceId").asOpt[String].getOrElse("global")
+
+          env.ecoMetrics.update(
+            dataIn,
+            dataOut,
+            overhead,
+            overheadWoCb,
+            cbDuration,
+            serviceId
+          )
+        } match {
+          case Failure(e) => logger.error("error while collecting eco metrics", e)
+          case _ =>
+        }
+      }
+    }
+
+    FastFuture.successful(ExportResult.ExportResultSuccess)
+  }
+}
