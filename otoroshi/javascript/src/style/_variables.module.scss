@@ -33,6 +33,7 @@ $color-white-5: #333;
 
 :root {
   // globals
+  --color_default: #fff;
   --color-primary: #{$primaryColor};
   --color-primary-lighter: #{$primaryColor-lighter};
   --color-green: #5cb85c; 
@@ -59,6 +60,7 @@ $color-white-5: #333;
 }
 
 [data-theme="light"] {
+  --color_default: #000;
   --bg-color_level1: #{$color-white-2};
   --color_level1: #{$color-white-5};
   --bg-color_level2: #{$color-white-3};

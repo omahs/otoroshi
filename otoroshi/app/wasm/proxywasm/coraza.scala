@@ -290,6 +290,8 @@ class CorazaPlugin(wasm: WasmConfig, val config: CorazaWafConfig, key: String, e
     var data = VmData.withRules(rules) // TODO - check if can be immutable
 
     val (poolId, slotId) = proxyStart(attrs, data)
+
+    println(s"${attrs.get(otoroshi.next.plugins.Keys.RouteKey).map(_.id)}: ($poolId, $slotId)")
     attrs.put(otoroshi.next.plugins.Keys.WasmSlotIdKey -> (poolId, slotId))
     data = data.copy(slotId = slotId)
 
