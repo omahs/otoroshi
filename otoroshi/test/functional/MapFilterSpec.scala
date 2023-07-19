@@ -55,9 +55,35 @@ class MapFilterSpec extends WordSpec with MustMatchers with OptionValues {
   "Match and Project utils" should {
     "match objects" in {
       otoroshi.utils.Match.matches(
-        source,
-        Json.obj("headers" -> Json.obj("$contains" -> Json.obj("key" -> "foo", "value" -> "bar")))
+        Json
+          .parse("""
+          |{
+          |  "headers": {
+          |    "foo": "baz"
+          |  }
+          |}
+          |""".stripMargin)
+          .as[JsObject],
+        Json.obj("headers" -> Json.obj("$contains" -> Json.obj("key" -> "foo", "value" -> "baz")))
       ) mustBe true
+      otoroshi.utils.Match.matches(
+        Json
+          .parse("""
+          |{
+          |  "headers": {
+          |    "foo": {
+          |      "subfoo": "bar"
+          |    }
+          |  }
+          |}
+          |""".stripMargin)
+          .as[JsObject],
+        Json.obj("headers.foo" -> Json.obj("$contains" -> Json.obj("key" -> "subfoo", "value" -> "bar")))
+      ) mustBe true
+      otoroshi.utils.Match.matches(
+        source,
+        Json.obj("headers.foo" -> Json.obj("$contains" -> Json.obj("key" -> "subfoo", "value" -> "bar")))
+      ) mustBe false
       otoroshi.utils.Match.matches(source, Json.obj("foo" -> "bar")) mustBe true
       otoroshi.utils.Match.matches(source, Json.obj("foo" -> "baz")) mustBe false
       otoroshi.utils.Match
@@ -689,7 +715,6 @@ class MapFilterSpec extends WordSpec with MustMatchers with OptionValues {
         matchExpr
       ) mustBe false
     }
-
     "exclude events with root operator" in {
       val logger = Logger("exclude-test")
       val config = DataExporterConfig(
@@ -758,7 +783,6 @@ class MapFilterSpec extends WordSpec with MustMatchers with OptionValues {
         logger
       ) mustBe true
     }
-
     "exclude events with two exclusions" in {
       val logger = Logger("exclude-test-2")
       val config = DataExporterConfig(
@@ -826,6 +850,27 @@ class MapFilterSpec extends WordSpec with MustMatchers with OptionValues {
         config,
         logger
       ) mustBe true
+    }
+    "works on sub-objects of arrays" in {
+      println("\n\n\n======================================================================\n\n\n")
+      val source = Json.obj(
+        "otoroshiHeadersIn" -> Json.arr(
+          Json.obj("key" -> "key1", "value" -> "value1"),
+          Json.obj("key" -> "key2", "value" -> "value2"),
+          Json.obj("key" -> "key3", "value" -> "value3"),
+          Json.obj("key" -> "key4", "value" -> "value4"),
+        )
+      )
+      val res = otoroshi.utils.Projection.project(
+        source,
+        Json.obj(
+          "otoroshiHeadersIn" -> Json.obj("$path" -> "$.otoroshiHeadersIn.*.key")
+        ),
+        identity
+      )
+      println(Json.prettyPrint(source))
+      println(Json.prettyPrint(res))
+      println("\n\n\n======================================================================\n\n\n")
     }
   }
 }

@@ -480,6 +480,18 @@ export function createApiKey(serviceId, routeId, ak) {
   }).then((r) => r.json());
 }
 
+export function createRawApiKey(ak) {
+  return fetch(`/bo/api/proxy/api/apikeys`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(ak),
+  }).then((r) => r.json());
+}
+
 export function updateApiKey(serviceId, routeId, ak) {
   const url = serviceId
     ? `/bo/api/proxy/api/services/${serviceId}/apikeys/${ak.clientId}`
@@ -2003,8 +2015,8 @@ export function tryIt(content, entity) {
   });
 }
 
-export function dataExportertryIt(content) {
-  return fetch('/bo/api/data-exporter/tryit', {
+export function kafkaDataExportertryIt(content) {
+  return fetch('/bo/api/data-exporter/kafkatryit', {
     method: 'POST',
     credentials: 'include',
     headers: {

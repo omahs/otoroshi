@@ -35,7 +35,7 @@
 <span class="home-icon">⌂</span>Otoroshi
 </a>
 <div class="version-number">
-16.4.0
+16.5.2
 </div>
 </div>
 <div class="nav-toc">
@@ -115,7 +115,7 @@
     <li><a href="../how-to-s/communicate-with-kafka.html" class="page">Communicate with Kafka</a></li>
     <li><a href="../how-to-s/create-custom-auth-module.html" class="page">Create your Authentication module</a></li>
     <li><a href="../how-to-s/working-with-eureka.html" class="page">Working with Eureka</a></li>
-    <li><a href="../how-to-s/instanciate-waf-coraza.html" class="page">Instanciate a WAF with Coraza</a></li>
+    <li><a href="../how-to-s/instantiate-waf-coraza.html" class="page">Instantiate a WAF with Coraza</a></li>
   </ul></li>
   <li><a href="../plugins/index.html" class="page">Otoroshi plugins</a>
   <ul>
@@ -167,7 +167,7 @@ C16.952,7,17,6.553,17,6c0-0.553-0.048-1-0.6-1H3.6C3.048,5,3,5.447,3,6C3,6.553,3.
 <span class="home-icon">⌂</span>Otoroshi
 </a>
 <div class="version-number">
-16.4.0
+16.5.2
 </div>
 </div>
 <div class="nav-toc">
@@ -247,7 +247,7 @@ C16.952,7,17,6.553,17,6c0-0.553-0.048-1-0.6-1H3.6C3.048,5,3,5.447,3,6C3,6.553,3.
     <li><a href="../how-to-s/communicate-with-kafka.html" class="page">Communicate with Kafka</a></li>
     <li><a href="../how-to-s/create-custom-auth-module.html" class="page">Create your Authentication module</a></li>
     <li><a href="../how-to-s/working-with-eureka.html" class="page">Working with Eureka</a></li>
-    <li><a href="../how-to-s/instanciate-waf-coraza.html" class="page">Instanciate a WAF with Coraza</a></li>
+    <li><a href="../how-to-s/instantiate-waf-coraza.html" class="page">Instantiate a WAF with Coraza</a></li>
   </ul></li>
   <li><a href="../plugins/index.html" class="page">Otoroshi plugins</a>
   <ul>
@@ -1860,6 +1860,8 @@ otoroshi {
     disableFunnyLogos = false
     disableFunnyLogos = ${?OTOROSHI_OPTIONS_DISABLE_FUNNY_LOGOS}
     staticExposedDomain = ${?OTOROSHI_OPTIONS_STATIC_EXPOSED_DOMAIN}
+    enable-json-media-type-with-open-charset = false # allow application/json media type with charset even if its not standard
+    enable-json-media-type-with-open-charset = ${?OTOROSHI_OPTIONS_ENABLE_JSON_MEDIA_TYPE_WITH_OPEN_CHARSET}
   }
   wasm {
   	cache {
@@ -2071,14 +2073,19 @@ otoroshi {
       location {
         provider = ${?otoroshi.instance.provider}
         provider = ${?OTOROSHI_CLUSTER_RELAY_LOCATION_PROVIDER}
+        provider = ${?app.instance.provider}
         zone = ${?otoroshi.instance.zone}
         zone = ${?OTOROSHI_CLUSTER_RELAY_LOCATION_ZONE}
+        zone = ${?app.instance.zone}
         region = ${?otoroshi.instance.region}
         region = ${?OTOROSHI_CLUSTER_RELAY_LOCATION_REGION}
+        region = ${?app.instance.region}
         datacenter = ${?otoroshi.instance.dc}
         datacenter = ${?OTOROSHI_CLUSTER_RELAY_LOCATION_DATACENTER}
+        datacenter = ${?app.instance.dc}
         rack = ${?otoroshi.instance.rack}
         rack = ${?OTOROSHI_CLUSTER_RELAY_LOCATION_RACK}
+        rack = ${?app.instance.rack}
       }
       exposition {
         url = ${?OTOROSHI_CLUSTER_RELAY_EXPOSITION_URL}
@@ -3143,6 +3150,7 @@ otoroshi {
     trustXForwarded = ${?OTOROSHI_OPTIONS_TRUST_XFORWARDED}
     disableFunnyLogos = ${?OTOROSHI_OPTIONS_DISABLE_FUNNY_LOGOS}
     staticExposedDomain = ${?OTOROSHI_OPTIONS_STATIC_EXPOSED_DOMAIN}
+    enable-json-media-type-with-open-charset = ${?OTOROSHI_OPTIONS_ENABLE_JSON_MEDIA_TYPE_WITH_OPEN_CHARSET}
   }
   wasm {
   	cache {
@@ -3295,14 +3303,19 @@ otoroshi {
       location {
         provider = ${?otoroshi.instance.provider}
         provider = ${?OTOROSHI_CLUSTER_RELAY_LOCATION_PROVIDER}
+        provider = ${?app.instance.provider}
         zone = ${?otoroshi.instance.zone}
         zone = ${?OTOROSHI_CLUSTER_RELAY_LOCATION_ZONE}
+        zone = ${?app.instance.zone}
         region = ${?otoroshi.instance.region}
         region = ${?OTOROSHI_CLUSTER_RELAY_LOCATION_REGION}
+        region = ${?app.instance.region}
         datacenter = ${?otoroshi.instance.dc}
         datacenter = ${?OTOROSHI_CLUSTER_RELAY_LOCATION_DATACENTER}
+        datacenter = ${?app.instance.dc}
         rack = ${?otoroshi.instance.rack}
         rack = ${?OTOROSHI_CLUSTER_RELAY_LOCATION_RACK}
+        rack = ${?app.instance.rack}
       }
       exposition {
         url = ${?OTOROSHI_CLUSTER_RELAY_EXPOSITION_URL}

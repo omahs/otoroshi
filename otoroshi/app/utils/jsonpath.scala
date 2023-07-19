@@ -7,7 +7,22 @@ import com.jayway.jsonpath.{Configuration, JsonPath}
 import net.minidev.json.{JSONArray, JSONObject}
 import otoroshi.api.OtoroshiEnvHolder
 import play.api.Logger
-import play.api.libs.json.{Format, JsArray, JsBoolean, JsError, JsNull, JsNumber, JsObject, JsResult, JsString, JsSuccess, JsValue, Json, Reads, Writes}
+import play.api.libs.json.{
+  Format,
+  JsArray,
+  JsBoolean,
+  JsError,
+  JsNull,
+  JsNumber,
+  JsObject,
+  JsResult,
+  JsString,
+  JsSuccess,
+  JsValue,
+  Json,
+  Reads,
+  Writes
+}
 import otoroshi.utils.syntax.implicits._
 import play.api.libs.json.jackson.JacksonJson
 
@@ -71,8 +86,8 @@ object JsonPathUtils {
   }
 
   def getAtPolyF(payload: String, path: String): Either[JsonPathReadError, JsValue] = {
-    val env = OtoroshiEnvHolder.get()
-    env.metrics.withTimer("JsonPathUtils.getAtPolyF") {
+    //val env = OtoroshiEnvHolder.get()
+    //env.metrics.withTimer("JsonPathUtils.getAtPolyF") {
       Try {
         val docCtx = JsonPath.parse(payload, config)
         val read   = docCtx.read[JsonNode](path)
@@ -86,7 +101,7 @@ object JsonPathUtils {
         case Failure(e)                               => Left(JsonPathReadError("error while trying to read", path, payload, e.some))
         case Success(s)                               => Right(s)
       }
-    }
+    //}
   }
 
   def getAtPoly(payload: String, path: String): Option[JsValue] = {
@@ -112,7 +127,10 @@ case class JsonPathValidator(path: String, value: JsValue, error: Option[String]
       case None                                                     => false
       case Some(JsNumber(v)) if value.isInstanceOf[JsString]        => v.toString == value.asString
       case Some(JsBoolean(v)) if value.isInstanceOf[JsString]       => v.toString == value.asString
-      case Some(JsArray(seq)) if path.startsWith("[?(") && path.endsWith(")]") && ctx.isInstanceOf[JsObject] && value.isInstanceOf[JsBoolean] => seq.nonEmpty
+      case Some(JsArray(seq))
+          if path.startsWith("[?(") && path.endsWith(")]") && ctx.isInstanceOf[JsObject] && value
+            .isInstanceOf[JsBoolean] =>
+        seq.nonEmpty
       case Some(arr @ JsArray(seq)) if value.isInstanceOf[JsString] => {
         val expected = value.asString
         if (expected.trim.startsWith("Size(") && expected.trim.endsWith(")")) {
@@ -166,32 +184,32 @@ case class JsonPathValidator(path: String, value: JsValue, error: Option[String]
           !seq.exists(_.stringify.contains(expected.substring(16).init))
         } else if (expected.trim.startsWith("JsonContains(Regex(") && expected.trim.endsWith("))")) {
           val regex = expected.substring(19).init.init
-          val r = RegexPool.regex(regex)
+          val r     = RegexPool.regex(regex)
           seq.exists(s => r.matches(s.stringify))
         } else if (expected.trim.startsWith("JsonContains(Wildcard(") && expected.trim.endsWith("))")) {
           val regex = expected.substring(23).init.init
-          val r = RegexPool.apply(regex)
+          val r     = RegexPool.apply(regex)
           seq.exists(s => r.matches(s.stringify))
         } else if (expected.trim.startsWith("JsonContainsNot(Regex(") && expected.trim.endsWith("))")) {
           val regex = expected.substring(23).init.init
-          val r = RegexPool.regex(regex)
+          val r     = RegexPool.regex(regex)
           !seq.exists(s => r.matches(s.stringify))
         } else if (expected.trim.startsWith("JsonContainsNot(Wildcard(") && expected.trim.endsWith("))")) {
           val regex = expected.substring(25).init.init
-          val r = RegexPool.apply(regex)
+          val r     = RegexPool.apply(regex)
           !seq.exists(s => r.matches(s.stringify))
         } /////////
         else if (expected.trim.startsWith("StartsWith(") && expected.trim.endsWith(")")) {
           val v = expected.substring(11).init
           seq.forall {
             case JsString(str) => str.startsWith(v)
-            case _ => false
+            case _             => false
           }
         } else if (expected.trim.startsWith("DontStartsWith(") && expected.trim.endsWith(")")) {
           val v = expected.substring(15).init
           seq.forall {
             case JsString(str) => !str.startsWith(v)
-            case _ => false
+            case _             => false
           }
         } else {
           arr.stringify == expected

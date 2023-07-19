@@ -2,7 +2,7 @@ import xerial.sbt.Sonatype._
 
 name := """otoroshi"""
 organization := "fr.maif"
-version := "16.4.0-dev"
+version := "16.5.0-dev"
 scalaVersion := scalaLangVersion
 
 inThisBuild(
@@ -164,6 +164,7 @@ libraryDependencies ++= Seq(
   "org.sangria-graphql"             %% "sangria"                                   % "3.4.0",
   "org.bigtesting"                   % "routd"                                     % "1.0.7",
   "com.nixxcode.jvmbrotli"           % "jvmbrotli"                                 % "0.2.0",
+  "io.azam.ulidj"                    % "ulidj"                                     % "1.0.4",
   // using a custom one right now as current build is broken
 //   "org.extism.sdk"                   % "extism"                                    % "0.3.2",
   if (scalaLangVersion.startsWith("2.12")) {
@@ -332,7 +333,8 @@ reStart / javaOptions ++= Seq(
   "-Dotoroshi.next.experimental.netty-server.http3.enabled=true",
   "-Dotoroshi.loggers.otoroshi-wasm-debug=INFO",
   "-Dotoroshi.loggers.otoroshi-proxy-wasm=TRACE",
-  "-Dotoroshi.options.enable-json-media-type-with-open-charset=true"
+  "-Dotoroshi.options.enable-json-media-type-with-open-charset=true",
+  "-Dotoroshi.next.state-sync-interval=1000"
   // "-Dotoroshi.next.experimental.netty-server.native.driver=IOUring",
   // "-Dotoroshi.storage=experimental-pg",
   // "-Dotoroshi.storage=redis",

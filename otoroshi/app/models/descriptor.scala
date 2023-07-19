@@ -33,7 +33,7 @@ import otoroshi.utils.config.ConfigUtils
 import otoroshi.utils.gzip.GzipConfig
 import otoroshi.utils.ReplaceAllWith
 import otoroshi.utils.cache.Caches
-import otoroshi.utils.cache.types.{LegitConcurrentHashMap, LegitTrieMap}
+import otoroshi.utils.cache.types.{UnboundedConcurrentHashMap, UnboundedTrieMap}
 import otoroshi.utils.http.{CacheConnectionSettings, MtlsConfig}
 
 import scala.collection.concurrent.TrieMap
@@ -62,9 +62,9 @@ case class ServiceDescriptorQuery(
       case s                                => s"$subdomain.$line.$domain"
     }
 
-  private val existsCache     = new LegitConcurrentHashMap[String, Boolean]
-  private val serviceIdsCache = new LegitConcurrentHashMap[String, Seq[String]]
-  private val servicesCache   = new LegitConcurrentHashMap[String, Seq[ServiceDescriptor]]
+  private val existsCache     = new UnboundedConcurrentHashMap[String, Boolean]
+  private val serviceIdsCache = new UnboundedConcurrentHashMap[String, Seq[String]]
+  private val servicesCache   = new UnboundedConcurrentHashMap[String, Seq[ServiceDescriptor]]
 
   def exists()(implicit ec: ExecutionContext, env: Env): Future[Boolean] = {
     val key = this.asKey
@@ -288,7 +288,7 @@ case class AtomicAverage(count: AtomicLong, sum: AtomicLong) {
 object BestResponseTime extends LoadBalancing {
 
   private[models] val random        = new scala.util.Random
-  private[models] val responseTimes = new LegitTrieMap[String, AtomicAverage]()
+  private[models] val responseTimes = new UnboundedTrieMap[String, AtomicAverage]()
 
   def incrementAverage(desc: ServiceDescriptor, target: Target, responseTime: Long): Unit = {
     val key = s"${desc.id}-${target.asKey}"
@@ -406,11 +406,11 @@ object TargetPredicate {
         case "NetworkLocationMatch" =>
           JsSuccess(
             NetworkLocationMatch(
-              provider = (json \ "provider").asOpt[String].filterNot(_.trim.isEmpty).getOrElse("local"),
-              region = (json \ "region").asOpt[String].filterNot(_.trim.isEmpty).getOrElse("local"),
-              zone = (json \ "zone").asOpt[String].filterNot(_.trim.isEmpty).getOrElse("local"),
-              dataCenter = (json \ "dc").asOpt[String].filterNot(_.trim.isEmpty).getOrElse("local"),
-              rack = (json \ "rack").asOpt[String].filterNot(_.trim.isEmpty).getOrElse("local")
+              provider = (json \ "provider").asOpt[String],
+              region = (json \ "region").asOpt[String],
+              zone = (json \ "zone").asOpt[String],
+              dataCenter = (json \ "dc").asOpt[String],
+              rack = (json \ "rack").asOpt[String]
             )
           )
         case _                      => JsSuccess(AlwaysMatch)
@@ -482,33 +482,43 @@ case class RackMatch(rack: String) extends TargetPredicate {
 }
 
 case class NetworkLocationMatch(
-    provider: String = "local",
-    region: String = "local",
-    zone: String = "local",
-    dataCenter: String = "local",
-    rack: String = "local"
+    provider: Option[String] = None,
+    region: Option[String] = None,
+    zone: Option[String] = None,
+    dataCenter: Option[String] = None,
+    rack: Option[String] = None
 ) extends TargetPredicate {
   def toJson: JsValue =
     Json.obj(
       "type"     -> "NetworkLocationMatch",
-      "provider" -> provider,
-      "region"   -> region,
-      "zone"     -> zone,
-      "dc"       -> dataCenter,
-      "rack"     -> rack
+      "provider" -> provider.map(JsString.apply).getOrElse(JsNull).as[JsValue],
+      "region"   -> region.map(JsString.apply).getOrElse(JsNull).as[JsValue],
+      "zone"     -> zone.map(JsString.apply).getOrElse(JsNull).as[JsValue],
+      "dc"       -> dataCenter.map(JsString.apply).getOrElse(JsNull).as[JsValue],
+      "rack"     -> rack.map(JsString.apply).getOrElse(JsNull).as[JsValue]
     )
   override def matches(reqId: String, req: RequestHeader, attrs: TypedMap)(implicit env: Env): Boolean = {
-    otoroshi.utils
-      .RegexPool(provider.trim.toLowerCase)
-      .matches(env.clusterConfig.relay.location.provider.trim.toLowerCase) &&
-    otoroshi.utils
-      .RegexPool(region.trim.toLowerCase)
-      .matches(env.clusterConfig.relay.location.region.trim.toLowerCase) &&
-    otoroshi.utils.RegexPool(zone.trim.toLowerCase).matches(env.clusterConfig.relay.location.zone.trim.toLowerCase) &&
-    otoroshi.utils
-      .RegexPool(dataCenter.trim.toLowerCase)
-      .matches(env.clusterConfig.relay.location.datacenter.trim.toLowerCase) &&
-    otoroshi.utils.RegexPool(rack.trim.toLowerCase).matches(env.clusterConfig.relay.location.rack.trim.toLowerCase)
+    provider.forall(p =>
+      otoroshi.utils
+        .RegexPool(p.trim.toLowerCase)
+        .matches(env.clusterConfig.relay.location.provider.trim.toLowerCase)
+    ) &&
+    region.forall(r =>
+      otoroshi.utils
+        .RegexPool(r.trim.toLowerCase)
+        .matches(env.clusterConfig.relay.location.region.trim.toLowerCase)
+    ) &&
+    zone.forall(z =>
+      otoroshi.utils.RegexPool(z.trim.toLowerCase).matches(env.clusterConfig.relay.location.zone.trim.toLowerCase)
+    ) &&
+    dataCenter.forall(d =>
+      otoroshi.utils
+        .RegexPool(d.trim.toLowerCase)
+        .matches(env.clusterConfig.relay.location.datacenter.trim.toLowerCase)
+    ) &&
+    rack.forall(r =>
+      otoroshi.utils.RegexPool(r.trim.toLowerCase).matches(env.clusterConfig.relay.location.rack.trim.toLowerCase)
+    )
   }
 }
 
@@ -2497,7 +2507,7 @@ trait ServiceDescriptorDataStore extends BasicStore[ServiceDescriptor] {
       }
      */
 
-    val matched                 = new LegitTrieMap[String, String]()
+    val matched                 = new UnboundedTrieMap[String, String]()
     val filtered1               = services.filter { sr =>
       val allHeadersMatched = matchAllHeaders(sr, query)
       val rootMatched       = sr.allPaths match {

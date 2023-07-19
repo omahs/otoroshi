@@ -1,15 +1,28 @@
 package functional
 
 import java.util.concurrent.atomic.AtomicInteger
-
 import akka.util.ByteString
 import com.typesafe.config.ConfigFactory
 import otoroshi.models._
 import org.joda.time.LocalTime
 import org.scalatest.concurrent.IntegrationPatience
 import org.scalatestplus.play.PlaySpec
+import otoroshi.models.SnowMonkeyConfig.toJson
+import otoroshi.next.models.{
+  NgBackend,
+  NgClientConfig,
+  NgDomainAndPath,
+  NgFrontend,
+  NgPluginInstance,
+  NgPluginInstanceConfig,
+  NgPlugins,
+  NgRoute,
+  NgTarget
+}
+import otoroshi.next.plugins.{NgChaosConfig, OverrideHost, SnowMonkeyChaos}
+import otoroshi.next.plugins.api.NgPluginHelper
 import play.api.Configuration
-import play.api.libs.json.Json
+import play.api.libs.json.{JsObject, Json}
 
 import scala.concurrent.duration._
 
@@ -45,8 +58,8 @@ class SnowMonkeySpec(name: String, configurationSpec: => Configuration) extends 
     //     })
     //   basicTestExpectedBody
     // }).await()
-    val basicTestServer   = new BodySizeService()
-    val initialDescriptor = ServiceDescriptor(
+    val basicTestServer = new BodySizeService()
+    /*val initialDescriptor = ServiceDescriptor(
       id = "basic-sm-test",
       name = "basic-sm-test",
       env = "prod",
@@ -62,11 +75,53 @@ class SnowMonkeySpec(name: String, configurationSpec: => Configuration) extends 
       forceHttps = false,
       enforceSecureCommunication = false,
       publicPatterns = Seq("/.*")
+    )*/
+
+    val initialRoute = NgRoute(
+      location = EntityLocation.default,
+      id = "basic-sm-test-route",
+      name = "basic-sm-test-route",
+      description = "basic-sm-test-route",
+      tags = Seq(),
+      metadata = Map(),
+      enabled = true,
+      debugFlow = false,
+      capture = false,
+      exportReporting = false,
+      frontend = NgFrontend(
+        domains = Seq(NgDomainAndPath(serviceHost)),
+        headers = Map(),
+        query = Map(),
+        methods = Seq(),
+        stripPath = true,
+        exact = false
+      ),
+      backend = NgBackend(
+        targets = Seq(
+          NgTarget(
+            hostname = "127.0.0.1",
+            port = basicTestServer.port,
+            id = "monkey-target",
+            tls = false
+          )
+        ),
+        root = "/",
+        rewrite = false,
+        loadBalancing = RoundRobin,
+        client = NgClientConfig.default
+      ),
+      plugins = NgPlugins(
+        Seq(
+          NgPluginInstance(
+            plugin = NgPluginHelper.pluginId[SnowMonkeyChaos]
+          )
+        )
+      )
     )
 
     "Setup the monkey" in {
       (for {
-        _ <- createOtoroshiService(initialDescriptor)
+        _ <- createOtoroshiRoute(initialRoute)
         _ <- updateSnowMonkey(c =>
                SnowMonkeyConfig(
                  enabled = true,
@@ -75,8 +130,8 @@ class SnowMonkeySpec(name: String, configurationSpec: => Configuration) extends 
                  includeUserFacingDescriptors = true,
                  outageDurationFrom = 3600000.millis,
                  outageDurationTo = 3600000.millis,
-                 startTime = LocalTime.now(),                  // parse("00:00:00.000"),
-                 stopTime = LocalTime.now().plusMillis(10000), //.parse("23:59:59.999"),
+                 startTime = LocalTime.now(),                   // parse("00:00:00.000"),
+                 stopTime = LocalTime.now().plusMillis(100000), //.parse("23:59:59.999"),
                  targetGroups = Seq("default"),
                  chaosConfig = ChaosConfig(
                    enabled = true,
@@ -188,6 +243,7 @@ class SnowMonkeySpec(name: String, configurationSpec: => Configuration) extends 
         )
         .get()
         .futureValue
+
       res.bodyAsBytes.size > 1024 mustBe true
       updateSnowMonkey(c =>
         c.copy(
@@ -232,7 +288,7 @@ class SnowMonkeySpec(name: String, configurationSpec: => Configuration) extends 
         )
       ).futureValue
       stopSnowMonkey().futureValue
-      deleteOtoroshiService(initialDescriptor).futureValue
+      deleteOtoroshiRoute(initialRoute).futureValue
     }
 
     "shutdown" in {

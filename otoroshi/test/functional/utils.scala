@@ -1295,6 +1295,24 @@ trait OtoroshiSpec extends WordSpec with MustMatchers with OptionValues with Sca
       }
   }
 
+  def createOtoroshiRoute(
+      route: NgRoute,
+      customPort: Option[Int] = None,
+      ws: WSClient = wsClient
+  ): Future[(JsValue, Int)] = {
+    ws.url(s"http://localhost:${customPort.getOrElse(port)}/api/routes")
+      .withHttpHeaders(
+        "Host"         -> "otoroshi-api.oto.tools",
+        "Content-Type" -> "application/json"
+      )
+      .withAuth("admin-api-apikey-id", "admin-api-apikey-secret", WSAuthScheme.BASIC)
+      .post(Json.stringify(route.json))
+      .map { resp =>
+        (resp.json, resp.status)
+      }
+      .andWait(1000.millis)
+  }
+
   def createOtoroshiService(
       service: ServiceDescriptor,
       customPort: Option[Int] = None,
@@ -1310,7 +1328,7 @@ trait OtoroshiSpec extends WordSpec with MustMatchers with OptionValues with Sca
       .map { resp =>
         (resp.json, resp.status)
       }
-      .andWait(1000.millis)
+      .andWait(2000.millis)
   }
 
   def createOtoroshiVerifier(
@@ -1328,7 +1346,7 @@ trait OtoroshiSpec extends WordSpec with MustMatchers with OptionValues with Sca
       .map { resp =>
         (resp.json, resp.status)
       }
-      .andWait(1000.millis)
+      .andWait(2000.millis)
   }
 
   def createOtoroshiApiKey(
@@ -1346,7 +1364,25 @@ trait OtoroshiSpec extends WordSpec with MustMatchers with OptionValues with Sca
       .map { resp =>
         (resp.json, resp.status)
       }
-      .andWait(1000.millis)
+      .andWait(2000.millis)
+  }
+
+  def deleteOtoroshiVerifier(
+                            verifier: GlobalJwtVerifier,
+                            customPort: Option[Int] = None,
+                            ws: WSClient = wsClient
+  ): Future[(JsValue, Int)] = {
+    ws.url(s"http://localhost:${customPort.getOrElse(port)}/api/verifiers/${verifier.id}")
+    .withHttpHeaders(
+      "Host" -> "otoroshi-api.oto.tools",
+      "Content-Type" -> "application/json"
+    )
+    .withAuth("admin-api-apikey-id", "admin-api-apikey-secret", WSAuthScheme.BASIC)
+    .delete()
+    .map { resp =>
+      (resp.json, resp.status)
+    }
+    .andWait(1000.millis)
   }
 
   def deleteOtoroshiApiKey(
@@ -1382,6 +1418,20 @@ trait OtoroshiSpec extends WordSpec with MustMatchers with OptionValues with Sca
       .andWait(1000.millis)
   }
 
+  def deleteOtoroshiRoute(route: NgRoute, customPort: Option[Int] = None): Future[(JsValue, Int)] = {
+    wsClient
+      .url(s"http://localhost:${customPort.getOrElse(port)}/api/routes/${route.id}")
+      .withHttpHeaders(
+        "Host" -> "otoroshi-api.oto.tools"
+      )
+      .withAuth("admin-api-apikey-id", "admin-api-apikey-secret", WSAuthScheme.BASIC)
+      .delete()
+      .map { resp =>
+        (resp.json, resp.status)
+      }
+      .andWait(1000.millis)
+  }
+
   def deleteOtoroshiService(service: ServiceDescriptor, customPort: Option[Int] = None): Future[(JsValue, Int)] = {
     wsClient
       .url(s"http://localhost:${customPort.getOrElse(port)}/api/services/${service.id}")
@@ -1394,7 +1444,7 @@ trait OtoroshiSpec extends WordSpec with MustMatchers with OptionValues with Sca
       .map { resp =>
         (resp.json, resp.status)
       }
-      .andWait(1000.millis)
+      .andWait(2000.millis)
   }
 }
 
@@ -1873,6 +1923,7 @@ trait ApiTester[Entity] {
   def ws: WSClient
   def env: Env
   def port: Int
+  def queryParams: Seq[(String, String)] = Seq()
 
   def testingBulk: Boolean = true
 
@@ -1933,6 +1984,7 @@ trait ApiTester[Entity] {
     val path = route()
     ws
       .url(s"http://otoroshi-api.oto.tools:$port$path")
+      .withQueryStringParameters(queryParams:_*)
       .withAuth("admin-api-apikey-id", "admin-api-apikey-secret", WSAuthScheme.BASIC)
       .withHttpHeaders("Content-Type" -> "application/json")
       .withFollowRedirects(false)
@@ -1962,6 +2014,7 @@ trait ApiTester[Entity] {
         val path = route() + "/" + extractId(entity)
         ws
           .url(s"http://otoroshi-api.oto.tools:$port$path")
+          .withQueryStringParameters(queryParams:_*)
           .withAuth("admin-api-apikey-id", "admin-api-apikey-secret", WSAuthScheme.BASIC)
           .withHttpHeaders("Content-Type" -> "application/json")
           .withFollowRedirects(false)
@@ -1992,6 +2045,7 @@ trait ApiTester[Entity] {
         val path = route() + "/" + extractId(entity)
         ws
           .url(s"http://otoroshi-api.oto.tools:$port$path")
+          .withQueryStringParameters(queryParams:_*)
           .withAuth("admin-api-apikey-id", "admin-api-apikey-secret", WSAuthScheme.BASIC)
           .withHttpHeaders("Content-Type" -> "application/json")
           .withFollowRedirects(false)
@@ -2020,6 +2074,7 @@ trait ApiTester[Entity] {
         val path = route() + "/" + extractId(entity)
         ws
           .url(s"http://otoroshi-api.oto.tools:$port$path")
+          .withQueryStringParameters(queryParams:_*)
           .withAuth("admin-api-apikey-id", "admin-api-apikey-secret", WSAuthScheme.BASIC)
           .withFollowRedirects(false)
           .withMethod("DELETE")
@@ -2045,6 +2100,7 @@ trait ApiTester[Entity] {
     val path = route()
     ws
       .url(s"http://otoroshi-api.oto.tools:$port$path")
+      .withQueryStringParameters(queryParams:_*)
       .withAuth("admin-api-apikey-id", "admin-api-apikey-secret", WSAuthScheme.BASIC)
       .withFollowRedirects(false)
       .withMethod("GET")
@@ -2066,6 +2122,7 @@ trait ApiTester[Entity] {
     val path = route() + "/" + extractId(entity)
     ws
       .url(s"http://otoroshi-api.oto.tools:$port$path")
+      .withQueryStringParameters(queryParams:_*)
       .withAuth("admin-api-apikey-id", "admin-api-apikey-secret", WSAuthScheme.BASIC)
       .withFollowRedirects(false)
       .withMethod("GET")
@@ -2087,6 +2144,7 @@ trait ApiTester[Entity] {
     val path = route() + "/_bulk"
     ws
       .url(s"http://otoroshi-api.oto.tools:$port$path")
+      .withQueryStringParameters(queryParams:_*)
       .withAuth("admin-api-apikey-id", "admin-api-apikey-secret", WSAuthScheme.BASIC)
       .withHttpHeaders("Content-Type" -> "application/x-ndjson")
       .withFollowRedirects(false)
@@ -2116,6 +2174,7 @@ trait ApiTester[Entity] {
         val path = route() + "/_bulk"
         ws
           .url(s"http://otoroshi-api.oto.tools:$port$path")
+          .withQueryStringParameters(queryParams:_*)
           .withAuth("admin-api-apikey-id", "admin-api-apikey-secret", WSAuthScheme.BASIC)
           .withHttpHeaders("Content-Type" -> "application/x-ndjson")
           .withFollowRedirects(false)
@@ -2160,6 +2219,7 @@ trait ApiTester[Entity] {
         val path = route() + "/_bulk"
         ws
           .url(s"http://otoroshi-api.oto.tools:$port$path")
+          .withQueryStringParameters(queryParams:_*)
           .withAuth("admin-api-apikey-id", "admin-api-apikey-secret", WSAuthScheme.BASIC)
           .withHttpHeaders("Content-Type" -> "application/x-ndjson")
           .withFollowRedirects(false)
@@ -2192,6 +2252,7 @@ trait ApiTester[Entity] {
         val path = route() + "/_bulk"
         ws
           .url(s"http://otoroshi-api.oto.tools:$port$path")
+          .withQueryStringParameters(queryParams:_*)
           .withAuth("admin-api-apikey-id", "admin-api-apikey-secret", WSAuthScheme.BASIC)
           .withFollowRedirects(false)
           .withMethod("DELETE")

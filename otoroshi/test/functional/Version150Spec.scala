@@ -209,7 +209,7 @@ class AuthModuleConfigApiSpec(name: String, configurationSpec: => Configuration)
     }
   }
 
-  override def singleEntity(): AuthModuleConfig                                   = env.datastores.authConfigsDataStore.template("basic".some, env)
+  override def singleEntity(): AuthModuleConfig                                   = env.datastores.authConfigsDataStore.template(None, env)
   override def entityName: String                                                 = "AuthModuleConfig"
   override def route(): String                                                    = "/api/auths"
   override def readEntityFromJson(json: JsValue): AuthModuleConfig                = AuthModuleConfig._fmt(env).reads(json).get
@@ -362,6 +362,7 @@ class CertificateApiSpec(name: String, configurationSpec: => Configuration) exte
     }
   }
 
+  override def queryParams(): Seq[(String, String)]       = Seq(("enrich", "false"))
   override def singleEntity(): Cert                       = Await.result(env.datastores.certificatesDataStore.template(ec, env), 10.seconds)
   override def entityName: String                         = "Cert"
   override def route(): String                            = "/api/certificates"
@@ -518,7 +519,7 @@ class ApikeyServiceApiSpec(name: String, configurationSpec: => Configuration)
       .initiateNewApiKey("admin-api-group", env)
       .copy(authorizedEntities = Seq(ServiceDescriptorIdentifier("admin-api-service")))
   override def entityName: String                             = "ApiKey"
-  override def route(): String                                = "/api/services/admin-api-service/apikeys"
+  override def route(): String                                = "/api/routes/admin-api-service/apikeys"
   override def readEntityFromJson(json: JsValue): ApiKey      = ApiKey._fmt.reads(json).get
   override def writeEntityToJson(entity: ApiKey): JsValue     = ApiKey._fmt.writes(entity)
   override def updateEntity(entity: ApiKey): ApiKey           = entity.copy(clientName = entity.clientName + " - updated")
@@ -609,7 +610,8 @@ class TeamsSpec(name: String, configurationSpec: => Configuration) extends Otoro
           Seq(TeamAccess("*"))
         )
       )
-    )
+    ),
+    adminEntityValidators = Map()
   )
   val tenantAdminUser = BackOfficeUser(
     randomId = "tenantadmin@otoroshi.io",
@@ -627,7 +629,8 @@ class TeamsSpec(name: String, configurationSpec: => Configuration) extends Otoro
           Seq(TeamAccess("*"))
         )
       )
-    )
+    ),
+    adminEntityValidators = Map()
   )
 
   val team1User     = BackOfficeUser(
@@ -646,7 +649,8 @@ class TeamsSpec(name: String, configurationSpec: => Configuration) extends Otoro
           Seq(TeamAccess("team1"))
         )
       )
-    )
+    ),
+    adminEntityValidators = Map()
   )
   val team2User     = BackOfficeUser(
     randomId = "team2@otoroshi.io",
@@ -664,7 +668,8 @@ class TeamsSpec(name: String, configurationSpec: => Configuration) extends Otoro
           Seq(TeamAccess("team2"))
         )
       )
-    )
+    ),
+    adminEntityValidators = Map()
   )
   val team1and2User = BackOfficeUser(
     randomId = "team1and2@otoroshi.io",
@@ -682,7 +687,8 @@ class TeamsSpec(name: String, configurationSpec: => Configuration) extends Otoro
           Seq(TeamAccess("team1"), TeamAccess("team2"))
         )
       )
-    )
+    ),
+    adminEntityValidators = Map()
   )
 
   def service(team: String): ServiceDescriptor = {

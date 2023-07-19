@@ -3,9 +3,17 @@ package otoroshi.next.extensions
 import otoroshi.api._
 import otoroshi.env.Env
 import otoroshi.models._
-import otoroshi.next.plugins.api.{NgAccess, NgAccessContext, NgAccessValidator, NgPluginCategory, NgPluginConfig, NgPluginVisibility, NgStep}
+import otoroshi.next.plugins.api.{
+  NgAccess,
+  NgAccessContext,
+  NgAccessValidator,
+  NgPluginCategory,
+  NgPluginConfig,
+  NgPluginVisibility,
+  NgStep
+}
 import otoroshi.storage._
-import otoroshi.utils.cache.types.LegitTrieMap
+import otoroshi.utils.cache.types.UnboundedTrieMap
 import otoroshi.utils.syntax.implicits._
 import play.api.libs.json._
 import play.api.mvc.Results
@@ -71,7 +79,7 @@ class FooAdminExtensionDatastores(env: Env, extensionId: AdminExtensionId) {
 
 class FooAdminExtensionState(env: Env) {
 
-  private val foos = new LegitTrieMap[String, Foo]()
+  private val foos = new UnboundedTrieMap[String, Foo]()
 
   def foo(id: String): Option[Foo] = foos.get(id)
   def allFoos(): Seq[Foo]          = foos.values.toSeq

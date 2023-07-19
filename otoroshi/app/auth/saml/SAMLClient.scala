@@ -35,9 +35,9 @@ import otoroshi.ssl.{DynamicSSLEngineProvider, PemHeaders}
 import otoroshi.utils.JsonPathValidator
 import otoroshi.utils.syntax.implicits._
 import play.api.Logger
-import play.api.libs.json.{Format, JsArray, JsError, JsObject, JsString, JsSuccess, JsValue, Json}
+import play.api.libs.json.{Format, JsArray, JsError, JsNull, JsObject, JsString, JsSuccess, JsValue, Json}
 import play.api.mvc.Results.{BadRequest, Ok, Redirect}
-import play.api.mvc.{AnyContent, Request, RequestHeader, Result}
+import play.api.mvc.{AnyContent, Request, RequestHeader, Result, Results}
 import play.twirl.api.TwirlHelperImports.twirlJavaCollectionToScala
 
 import java.io.{ByteArrayInputStream, InputStreamReader, Reader, StringWriter, Writer}
@@ -54,6 +54,8 @@ import javax.xml.namespace.QName
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters.{asScalaBufferConverter, asScalaSetConverter}
 import scala.util.Try
+
+import java.util.zip.Deflater
 
 case class SAMLModule(authConfig: SamlAuthModuleConfig) extends AuthModule {
 
@@ -102,15 +104,19 @@ case class SAMLModule(authConfig: SamlAuthModuleConfig) extends AuthModule {
   )(implicit ec: ExecutionContext, env: Env): Future[Either[Result, Option[String]]] = {
     getLogoutRequest(env, authConfig, user.map(_.metadata.getOrElse("saml-id", ""))).map {
       case Left(_)        => Right(None)
-      case Right(encoded) =>
-        if (authConfig.singleLogoutProtocolBinding == SAMLProtocolBinding.Post)
-          Left(Ok(otoroshi.views.html.oto.saml(encoded, authConfig.singleLogoutUrl, env)))
-        else {
-          env.Ws
-            .url(s"${authConfig.singleLogoutUrl}?SAMLRequest=${URLEncoder.encode(encoded, "UTF-8")}")
-            .get()
-          Right(None)
+      case Right(encoded) => authConfig.singleLogoutUrl match {
+        case None => Left(Results.InternalServerError(Json.obj("error" -> "no logout url configured !")))
+        case Some(singleLogoutUrl) => {
+          if (authConfig.singleLogoutProtocolBinding == SAMLProtocolBinding.Post)
+            Left(Ok(otoroshi.views.html.oto.saml(encoded, singleLogoutUrl, env)))
+          else {
+            env.Ws
+              .url(s"${singleLogoutUrl}?SAMLRequest=${URLEncoder.encode(encoded, "UTF-8")}")
+              .get()
+            Right(None)
+          }
         }
+      }
     }
   }
 
@@ -205,15 +211,19 @@ case class SAMLModule(authConfig: SamlAuthModuleConfig) extends AuthModule {
 
     getLogoutRequest(env, authConfig, Some(user.metadata.getOrElse("saml-id", ""))).map {
       case Left(_)        => Right(None)
-      case Right(encoded) =>
-        if (authConfig.singleLogoutProtocolBinding == SAMLProtocolBinding.Post)
-          Left(Ok(otoroshi.views.html.oto.saml(encoded, authConfig.singleLogoutUrl, env)))
-        else {
-          env.Ws
-            .url(s"${authConfig.singleLogoutUrl}?SAMLRequest=${URLEncoder.encode(encoded, "UTF-8")}")
-            .get()
-          Right(None)
+      case Right(encoded) => authConfig.singleLogoutUrl match {
+        case None => Left(Results.InternalServerError(Json.obj("error" -> "no logout url configured !")))
+        case Some(singleLogoutUrl) => {
+          if (authConfig.singleLogoutProtocolBinding == SAMLProtocolBinding.Post)
+            Left(Ok(otoroshi.views.html.oto.saml(encoded, singleLogoutUrl, env)))
+          else {
+            env.Ws
+              .url(s"${singleLogoutUrl}?SAMLRequest=${URLEncoder.encode(encoded, "UTF-8")}")
+              .get()
+            Right(None)
+          }
         }
+      }
     }
   }
 
@@ -315,7 +325,7 @@ object SamlAuthModuleConfig extends FromJson[AuthModuleConfig] {
           desc = (json \ "desc").asOpt[String].getOrElse("--"),
           sessionMaxAge = (json \ "sessionMaxAge").asOpt[Int].getOrElse(86400),
           singleSignOnUrl = (json \ "singleSignOnUrl").as[String],
-          singleLogoutUrl = (json \ "singleLogoutUrl").as[String],
+          singleLogoutUrl = (json \ "singleLogoutUrl").asOpt[String].filter(_.nonEmpty),
           credentials = (json \ "credentials").as[SAMLCredentials](SAMLCredentials.fmt),
           tags = (json \ "tags").asOpt[Seq[String]].getOrElse(Seq.empty[String]),
           metadata = (json \ "metadata").asOpt[Map[String, String]].getOrElse(Map.empty),
@@ -347,17 +357,23 @@ object SamlAuthModuleConfig extends FromJson[AuthModuleConfig] {
             .asOpt[Seq[JsValue]]
             .map(_.flatMap(v => JsonPathValidator.format.reads(v).asOpt))
             .getOrElse(Seq.empty),
-          adminEntityValidatorsOverride = json.select("adminEntityValidatorsOverride").asOpt[JsObject].map { o =>
-            o.value.mapValues { obj =>
-              obj.asObject.value.mapValues { arr =>
-                arr.asArray.value.map { item =>
-                  JsonPathValidator.format.reads(item)
-                }.collect {
-                  case JsSuccess(v, _) => v
-                }
+          adminEntityValidatorsOverride = json
+            .select("adminEntityValidatorsOverride")
+            .asOpt[JsObject]
+            .map { o =>
+              o.value.mapValues { obj =>
+                obj.asObject.value.mapValues { arr =>
+                  arr.asArray.value
+                    .map { item =>
+                      JsonPathValidator.format.reads(item)
+                    }
+                    .collect { case JsSuccess(v, _) =>
+                      v
+                    }
+                }.toMap
               }.toMap
-            }.toMap
-          }.getOrElse(Map.empty[String, Map[String, Seq[JsonPathValidator]]])
+            }
+            .getOrElse(Map.empty[String, Map[String, Seq[JsonPathValidator]]])
         )
       )
     } recover { case e =>
@@ -391,8 +407,8 @@ object SamlAuthModuleConfig extends FromJson[AuthModuleConfig] {
       else {
         if (idpssoDescriptor.getSingleSignOnServices.isEmpty)
           Left("Cannot find SSO binding in metadata")
-        else if (idpssoDescriptor.getSingleLogoutServices.isEmpty)
-          Left("Cannot find Single Logout Service in metadata")
+        // else if (idpssoDescriptor.getSingleLogoutServices.isEmpty)
+        //   Left("Cannot find Single Logout Service in metadata")
         else {
           Right(
             SamlAuthModuleConfig(
@@ -400,7 +416,7 @@ object SamlAuthModuleConfig extends FromJson[AuthModuleConfig] {
               name = "SAML Module",
               desc = "SAML Module",
               singleSignOnUrl = idpssoDescriptor.getSingleSignOnServices.get(0).getLocation,
-              singleLogoutUrl = idpssoDescriptor.getSingleLogoutServices.get(0).getLocation,
+              singleLogoutUrl = Try(idpssoDescriptor.getSingleLogoutServices.get(0).getLocation).filter(_ != null).toOption,
               issuer = entityDescriptor.getEntityID,
               ssoProtocolBinding = SAMLProtocolBinding(idpssoDescriptor.getSingleSignOnServices.get(0).getBinding),
               singleLogoutProtocolBinding =
@@ -659,7 +675,7 @@ case class SamlAuthModuleConfig(
     sessionMaxAge: Int = 86400,
     userValidators: Seq[JsonPathValidator] = Seq.empty,
     singleSignOnUrl: String,
-    singleLogoutUrl: String,
+    singleLogoutUrl: Option[String],
     ssoProtocolBinding: SAMLProtocolBinding = SAMLProtocolBinding.Redirect,
     singleLogoutProtocolBinding: SAMLProtocolBinding = SAMLProtocolBinding.Redirect,
     credentials: SAMLCredentials = SAMLCredentials(Credential(), Credential()),
@@ -693,30 +709,30 @@ case class SamlAuthModuleConfig(
   override def _fmt()(implicit env: Env): Format[AuthModuleConfig]      = AuthModuleConfig._fmt(env)
   override def cookieSuffix(desc: ServiceDescriptor)                    = s"saml-auth-$id"
   override def asJson                                                   = location.jsonWithKey ++ Json.obj(
-    "type"                        -> "saml",
-    "id"                          -> this.id,
-    "name"                        -> this.name,
-    "desc"                        -> this.desc,
-    "sessionMaxAge"               -> this.sessionMaxAge,
-    "clientSideSessionEnabled"    -> this.clientSideSessionEnabled,
-    "userValidators"              -> JsArray(userValidators.map(_.json)),
-    "singleSignOnUrl"             -> this.singleSignOnUrl,
-    "singleLogoutUrl"             -> this.singleLogoutUrl,
-    "credentials"                 -> SAMLCredentials.fmt.writes(this.credentials),
-    "tags"                        -> JsArray(tags.map(JsString.apply)),
-    "metadata"                    -> this.metadata,
-    "sessionCookieValues"         -> SessionCookieValues.fmt.writes(this.sessionCookieValues),
-    "issuer"                      -> this.issuer,
-    "validatingCertificates"      -> this.validatingCertificates,
-    "validateSignature"           -> this.validateSignature,
-    "validateAssertions"          -> this.validateAssertions,
-    "signature"                   -> SAMLSignature.fmt.writes(this.signature),
-    "nameIDFormat"                -> this.nameIDFormat.name,
-    "ssoProtocolBinding"          -> this.ssoProtocolBinding.name,
-    "singleLogoutProtocolBinding" -> this.singleLogoutProtocolBinding.name,
-    "usedNameIDAsEmail"           -> this.usedNameIDAsEmail,
-    "emailAttributeName"          -> this.emailAttributeName,
-    "sessionCookieValues"         -> SessionCookieValues.fmt.writes(this.sessionCookieValues),
+    "type"                          -> "saml",
+    "id"                            -> this.id,
+    "name"                          -> this.name,
+    "desc"                          -> this.desc,
+    "sessionMaxAge"                 -> this.sessionMaxAge,
+    "clientSideSessionEnabled"      -> this.clientSideSessionEnabled,
+    "userValidators"                -> JsArray(userValidators.map(_.json)),
+    "singleSignOnUrl"               -> this.singleSignOnUrl,
+    "singleLogoutUrl"               -> this.singleLogoutUrl.map(JsString.apply).getOrElse(JsNull).asValue,
+    "credentials"                   -> SAMLCredentials.fmt.writes(this.credentials),
+    "tags"                          -> JsArray(tags.map(JsString.apply)),
+    "metadata"                      -> this.metadata,
+    "sessionCookieValues"           -> SessionCookieValues.fmt.writes(this.sessionCookieValues),
+    "issuer"                        -> this.issuer,
+    "validatingCertificates"        -> this.validatingCertificates,
+    "validateSignature"             -> this.validateSignature,
+    "validateAssertions"            -> this.validateAssertions,
+    "signature"                     -> SAMLSignature.fmt.writes(this.signature),
+    "nameIDFormat"                  -> this.nameIDFormat.name,
+    "ssoProtocolBinding"            -> this.ssoProtocolBinding.name,
+    "singleLogoutProtocolBinding"   -> this.singleLogoutProtocolBinding.name,
+    "usedNameIDAsEmail"             -> this.usedNameIDAsEmail,
+    "emailAttributeName"            -> this.emailAttributeName,
+    "sessionCookieValues"           -> SessionCookieValues.fmt.writes(this.sessionCookieValues),
     "adminEntityValidatorsOverride" -> JsObject(adminEntityValidatorsOverride.mapValues { o =>
       JsObject(o.mapValues(v => JsArray(v.map(_.json))))
     })
@@ -738,7 +754,7 @@ object SAMLModule {
     tags = Seq.empty,
     metadata = Map.empty,
     singleSignOnUrl = "",
-    singleLogoutUrl = "",
+    singleLogoutUrl = None,
     issuer = "",
     sessionCookieValues = SessionCookieValues(),
     clientSideSessionEnabled = true
@@ -763,9 +779,17 @@ object SAMLModule {
     nameIDPolicy.setFormat(samlConfig.nameIDFormat.value)
     request.setNameIDPolicy(nameIDPolicy)
 
+    request.setID("z" + UUID.randomUUID().toString)
+
     val issuer = buildObject(Issuer.DEFAULT_ELEMENT_NAME).asInstanceOf[Issuer]
     issuer.setValue(samlConfig.issuer)
     request.setIssuer(issuer)
+
+    val subject = buildObject(Subject.DEFAULT_ELEMENT_NAME).asInstanceOf[Subject]
+    val nameID = buildObject(NameID.DEFAULT_ELEMENT_NAME).asInstanceOf[NameID]
+    nameID.setValue("z" + UUID.randomUUID().toString)
+    subject.setNameID(nameID)
+    request.setSubject(subject)
 
     request.setIssueInstant(Instant.now())
 
@@ -808,8 +832,10 @@ object SAMLModule {
     val dom          = marshaller.marshall(request)
 
     XMLHelper.writeNode(dom, stringWriter)
+    val body = stringWriter.toString
+    val deflatedBody = doDeflate(body.getBytes(StandardCharsets.UTF_8))
 
-    org.apache.commons.codec.binary.Base64.encodeBase64String(stringWriter.toString.getBytes(StandardCharsets.UTF_8))
+    org.apache.commons.codec.binary.Base64.encodeBase64URLSafeString(deflatedBody)
   }
 
   def decodeAndValidateSamlResponse(
@@ -997,6 +1023,21 @@ object SAMLModule {
             }
         case _                                    => FastFuture.successful(())
       }
+  }
+
+  def doDeflate(dataBytes: Array[Byte]): Array[Byte] = {
+    var compBufSize = 655316
+    if (compBufSize < dataBytes.length + 5) {
+      compBufSize = dataBytes.length + 5
+    }
+    val compBuf = new Array[Byte](compBufSize)
+    val compresser = new Deflater(9, true)
+    compresser.setInput(dataBytes)
+    compresser.finish
+    val compressedDataLength = compresser.deflate(compBuf)
+    val compressedData = new Array[Byte](compressedDataLength)
+    System.arraycopy(compBuf, 0, compressedData, 0, compressedDataLength)
+    compressedData
   }
 
   def decodeAssertionWithCertificate(response: Response, certificate: BasicX509Credential): Future[Unit] = {

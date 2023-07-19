@@ -23,7 +23,7 @@ import otoroshi.jobs.newengine.NewEngine
 import otoroshi.jobs.updates.SoftwareUpdatesJobs
 import otoroshi.models.RightsChecker.SuperAdminOnly
 import otoroshi.models._
-import otoroshi.next.models.{GraphQLFormats, NgRoute, NgRouteComposition}
+import otoroshi.next.models.{GraphQLFormats, NgRoute, NgRouteComposition, NgTarget}
 import otoroshi.next.plugins.EurekaServerSink
 import otoroshi.next.plugins.api.NgPluginHelper
 import otoroshi.next.proxy.{BackOfficeRequest, ProxyEngine}
@@ -1061,43 +1061,40 @@ class BackOfficeController(
     }
 
   def fetchSAMLConfiguration() = BackOfficeActionAuth.async(parse.json) { ctx =>
-    {
-      import scala.xml.Elem
-      import scala.xml.XML._
+    import scala.xml.Elem
+    import scala.xml.XML._
+    Try {
+      val xmlContent: Either[String, Elem] = (ctx.request.body \ "url").asOpt[String] match {
+        case Some(url) => Right(load(url))
+        case None      =>
+          (ctx.request.body \ "xml").asOpt[String] match {
+            case Some(content) => Right(loadString(content))
+            case None          => Left("Missing body content")
+          }
+      }
 
-      Try {
-        val xmlContent: Either[String, Elem] = (ctx.request.body \ "url").asOpt[String] match {
-          case Some(url) => Right(load(url))
-          case None      =>
-            (ctx.request.body \ "xml").asOpt[String] match {
-              case Some(content) => Right(loadString(content))
-              case None          => Left("Missing body content")
-            }
-        }
+      xmlContent match {
+        case Left(err)         => FastFuture.successful(BadRequest(err))
+        case Right(xmlContent) =>
+          var metadata = (xmlContent \\ "EntitiesDescriptor").toString
 
-        xmlContent match {
-          case Left(err)         => FastFuture.successful(BadRequest(err))
-          case Right(xmlContent) =>
-            var metadata = (xmlContent \\ "EntitiesDescriptor").toString
+          if (metadata.isEmpty)
+            metadata = xmlContent.toString
 
-            if (metadata.isEmpty)
-              metadata = xmlContent.toString
-
-            SamlAuthModuleConfig.fromDescriptor(metadata) match {
-              case Left(err)     => FastFuture.successful(BadRequest(err))
-              case Right(config) => FastFuture.successful(Ok(SamlAuthModuleConfig._fmt.writes(config)))
-            }
-        }
-      } recover { case e: Throwable =>
-        FastFuture.successful(
-          BadRequest(
-            Json.obj(
-              "error" -> e.getMessage
-            )
+          SamlAuthModuleConfig.fromDescriptor(metadata) match {
+            case Left(err)     => FastFuture.successful(BadRequest(err))
+            case Right(config) => FastFuture.successful(Ok(SamlAuthModuleConfig._fmt.writes(config)))
+          }
+      }
+    } recover { case e: Throwable =>
+      FastFuture.successful(
+        BadRequest(
+          Json.obj(
+            "error" -> e.getMessage
           )
         )
-      } get
-    }
+      )
+    } get
   }
 
   def fetchBodiesFor(serviceId: String, requestId: String) =
@@ -1546,7 +1543,6 @@ class BackOfficeController(
   def createCsr =
     BackOfficeActionAuth.async(parse.json) { ctx =>
       val issuerRef = (ctx.request.body \ "caRef").asOpt[String]
-
       GenCsrQuery.fromJson(ctx.request.body) match {
         case Left(err)    => BadRequest(Json.obj("error" -> err)).future
         case Right(query) => {
@@ -2036,5 +2032,86 @@ class BackOfficeController(
           NoContent
         }
     }
+  }
+
+  def testFilteringAndProjection() = BackOfficeActionAuth(parse.json) { ctx =>
+
+    val body = ctx.request.body
+    val input = body.select("input").asOpt[JsValue].getOrElse(Json.obj())
+    val matchExpressions: JsObject = body.select("match").asOpt[JsObject].getOrElse(Json.obj())
+    val matchIncludeExpressions: Seq[JsObject] = matchExpressions.select("include").asOpt[Seq[JsObject]].getOrElse(Seq.empty[JsObject])
+    val matchExcludeExpressions: Seq[JsObject] = matchExpressions.select("exclude").asOpt[Seq[JsObject]].getOrElse(Seq.empty[JsObject])
+    val projectionExpression: JsObject = body.select("projection").asOpt[JsObject].getOrElse(Json.obj())
+
+    val shouldInclude = if (matchIncludeExpressions.isEmpty) true else matchIncludeExpressions.forall(expr => otoroshi.utils.Match.matches(input, expr))
+    val shouldExclude = if (matchExcludeExpressions.isEmpty) false else matchExcludeExpressions.forall(expr => otoroshi.utils.Match.matches(input, expr))
+
+    val matches = shouldInclude && !shouldExclude
+
+    val projected = otoroshi.utils.Projection.project(input, projectionExpression, identity)
+
+    Ok(Json.obj("matches" -> matches, "projection" -> projected))
+  }
+
+  def testFilteringAndProjectionInputDoc() = BackOfficeActionAuth { ctx =>
+    val rawRequest = ctx.request
+    val route = NgRoute.empty
+    val target = NgTarget.default
+    Ok(GatewayEvent(
+      `@id` = env.snowflakeGenerator.nextIdStr(),
+      reqId = env.snowflakeGenerator.nextIdStr(),
+      parentReqId = None,
+      `@timestamp` = DateTime.now(),
+      `@calledAt` = DateTime.now(),
+      protocol = ctx.request.theProtocol,
+      to = Location(
+        scheme = rawRequest.theProtocol,
+        host = rawRequest.theHost,
+        uri = rawRequest.relativeUri
+      ),
+      target = Location(
+        scheme = target.toTarget.scheme,
+        host = target.toTarget.host,
+        uri = rawRequest.relativeUri
+      ),
+      duration = 30L,
+      overhead = 10L,
+      cbDuration = 0L,
+      overheadWoCb = 10L,
+      callAttempts = 1,
+      url = rawRequest.theUrl,
+      method = rawRequest.method,
+      from = rawRequest.theIpAddress,
+      env = "prod",
+      data = DataInOut(
+        dataIn = 0L,
+        dataOut = 128L
+      ),
+      status = 200,
+      headers = rawRequest.headers.toSimpleMap.toSeq.map(Header.apply),
+      headersOut = Seq.empty,
+      otoroshiHeadersIn = rawRequest.headers.toSimpleMap.toSeq.map(Header.apply),
+      otoroshiHeadersOut = Seq.empty,
+      extraInfos = None,
+      identity = Identity(
+        identityType = "APIKEY",
+        identity = "client_id",
+        label = "client"
+      ).some,
+      responseChunked = false,
+      `@serviceId` = s"route_${IdGenerator.uuid}",
+      `@service` = route.name,
+      descriptor = Some(route.legacy),
+      route = Some(route),
+      `@product` = route.metadata.getOrElse("product", "--"),
+      remainingQuotas = RemainingQuotas(),
+      viz = None,
+      clientCertChain = rawRequest.clientCertChainPem,
+      err = false,
+      gwError = None,
+      userAgentInfo = None,
+      geolocationInfo = None,
+      extraAnalyticsData = None
+    ).toJson)
   }
 }

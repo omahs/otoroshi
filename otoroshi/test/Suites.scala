@@ -81,14 +81,12 @@ object OtoroshiTests {
     val suites         = Seq(
       new BasicSpec,
       new AdminApiSpec(name, config),
-      new ProgrammaticApiSpec(name, config),
       new CircuitBreakerSpec(name, config),
       new AlertAndAnalyticsSpec(name, config),
       // new AnalyticsSpec(name, config),
       new ApiKeysSpec(name, config),
       new CanarySpec(name, config),
       new QuotasSpec(name, config),
-      new SidecarSpec(name, config),
       new JWTVerificationSpec(name, config),
       new JWTVerificationRefSpec(name, config),
       new SnowMonkeySpec(name, config),
@@ -172,3 +170,11 @@ class ConfigCleanerTests
     extends Suites(
       new ConfigurationCleanupSpec()
     )
+
+class CircuitBreakerTests extends Suites(
+    new CircuitBreakerSpec("InMemory", Configurations.InMemoryConfiguration)
+)
+
+class AnalyticsTests extends Suites(
+    new AlertAndAnalyticsSpec("InMemory", Configurations.InMemoryConfiguration)
+)

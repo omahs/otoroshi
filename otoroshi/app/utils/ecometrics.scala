@@ -7,8 +7,6 @@ import play.api.Logger
 import java.util.{Timer => _}
 import scala.collection.concurrent.TrieMap
 
-UniformReservoir
-
 case class EcoScore(dataIn: Long,
                     dataOut: Long,
                     overhead: Long,
