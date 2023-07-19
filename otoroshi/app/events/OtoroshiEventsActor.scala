@@ -8,14 +8,7 @@ import akka.actor.{Actor, Props}
 import akka.http.scaladsl.model.{ContentType, ContentTypes}
 import akka.http.scaladsl.util.FastFuture
 import akka.stream.alpakka.s3.scaladsl.S3
-import akka.stream.alpakka.s3.{
-  ApiVersion,
-  ListBucketResultContents,
-  MemoryBufferType,
-  MetaHeaders,
-  S3Attributes,
-  S3Settings
-}
+import akka.stream.alpakka.s3.{ApiVersion, ListBucketResultContents, MemoryBufferType, MetaHeaders, S3Attributes, S3Settings}
 import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
 import akka.stream.{Attributes, OverflowStrategy, QueueOfferResult}
 import com.sksamuel.pulsar4s.Producer
@@ -32,25 +25,12 @@ import otoroshi.next.plugins.api.NgPluginCategory
 import otoroshi.script._
 import otoroshi.security.IdGenerator
 import otoroshi.storage.drivers.inmemory.S3Configuration
-import otoroshi.utils.TypedMap
+import otoroshi.utils.{TypedMap}
 import otoroshi.utils.cache.types.LegitTrieMap
 import otoroshi.utils.json.JsonOperationsHelper
 import otoroshi.utils.mailer.{EmailLocation, MailerSettings}
 import play.api.Logger
-import play.api.libs.json.{
-  Format,
-  JsArray,
-  JsBoolean,
-  JsError,
-  JsNull,
-  JsNumber,
-  JsObject,
-  JsResult,
-  JsString,
-  JsSuccess,
-  JsValue,
-  Json
-}
+import play.api.libs.json.{Format, JsArray, JsBoolean, JsError, JsNull, JsNumber, JsObject, JsResult, JsString, JsSuccess, JsValue, Json}
 
 import scala.collection.concurrent.TrieMap
 import scala.concurrent.duration._
@@ -1310,13 +1290,32 @@ class EcoMetricsExporter(_config: DataExporterConfig)(implicit ec: ExecutionCont
           val overhead = (event \ "overhead").asOpt[Long].getOrElse(0L)
           val serviceId = (event \ "@serviceId").asOpt[String].getOrElse("global")
 
+          val method = (event \"method").asOpt[String].getOrElse("unknown")
+          val path = event.select("to").asOpt[String].getOrElse("unknown")
+
+          var headers = event.select("headers").asOpt[JsArray].getOrElse(Json.arr())
+          val headersOut = event.select("headersOut").asOpt[JsArray].getOrElse(Json.arr())
+
+          headers = headers :+ Json.obj("method" -> method)
+          headers = headers :+ Json.obj("to" -> path)
+
+//          println("otoroshiHeadersIn", event.select("otoroshiHeadersIn"))
+//          println("otoroshiHeadersOut", event.select("otoroshiHeadersOut"))
+
           env.ecoMetrics.update(
             dataIn,
             dataOut,
             overhead,
             overheadWoCb,
             cbDuration,
-            serviceId
+            duration,
+            serviceId,
+            headers.value.foldLeft(0L) { case (acc, item) =>
+              acc + item.as[JsObject].select("key").as[String].byteString.size + item.as[JsObject].select("value").as[String].byteString.size + 3 // 3 = ->
+            },
+            headersOut.value.foldLeft(0L) { case (acc, item) =>
+              acc + item.as[JsObject].select("key").as[String].byteString.size + item.as[JsObject].select("value").as[String].byteString.size + 3 // 3 = ->
+            },
           )
         } match {
           case Failure(e) => logger.error("error while collecting eco metrics", e)

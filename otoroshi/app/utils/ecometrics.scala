@@ -1,42 +1,22 @@
 package utils
 
-import akka.actor.Cancellable
-import akka.http.scaladsl.util.FastFuture
-import com.codahale.metrics.jmx.JmxReporter
-import com.codahale.metrics.json.MetricsModule
-import com.codahale.metrics.jvm.{GarbageCollectorMetricSet, JvmAttributeGaugeSet, MemoryUsageGaugeSet, ThreadStatesGaugeSet}
-import com.codahale.metrics._
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.spotify.metrics.core.{MetricId, SemanticMetricRegistry, SemanticMetricSet}
-import com.spotify.metrics.jvm.{CpuGaugeSet, FileDescriptorGaugeSet}
-import io.prometheus.client.exporter.common.TextFormat
-import otoroshi.cluster.{ClusterMode, StatsView}
+import com.codahale.metrics.UniformReservoir
 import otoroshi.env.Env
-import otoroshi.events.StatsDReporter
-import otoroshi.utils.RegexPool
-import otoroshi.utils.cache.types.LegitConcurrentHashMap
-import otoroshi.utils.prometheus.CustomCollector
 import play.api.Logger
-import play.api.inject.ApplicationLifecycle
-import play.api.libs.json.{JsArray, JsObject, JsValue, Json}
 
-import java.io.StringWriter
-import java.lang.management.ManagementFactory
-import java.util
-import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
-import java.util.concurrent.{ConcurrentHashMap, TimeUnit}
-import java.util.{Timer => _, _}
-import javax.management.{Attribute, ObjectName}
+import java.util.{Timer => _}
 import scala.collection.concurrent.TrieMap
-import scala.concurrent.duration.FiniteDuration
-import scala.concurrent.{ExecutionContext, Future}
-import scala.jdk.CollectionConverters.{mapAsJavaMapConverter, mapAsScalaMapConverter}
+
+UniformReservoir
 
 case class EcoScore(dataIn: Long,
                     dataOut: Long,
                     overhead: Long,
                     overheadWithoutCircuitBreaker: Long,
-                    circuitBreaker: Long)
+                    circuitBreakerDuration: Long,
+                    duration: Long,
+                    headers: Long,
+                    headersOut: Long)
 
 class EcoMetrics(env: Env)  {
 
@@ -52,16 +32,40 @@ class EcoMetrics(env: Env)  {
              overhead: Long,
              overheadWoCb: Long,
              cbDuration: Long,
-             serviceId: String) = {
+             duration: Long,
+             serviceId: String,
+             headersSize: Long,
+             headersOutSize: Long) = {
 
-    registry.put(
-      serviceId,
-      registry.map
-    )
-    println(serviceId, dataIn,
+    val newScore = EcoScore(
+      dataIn,
       dataOut,
       overhead,
       overheadWoCb,
-      cbDuration)
+      cbDuration,
+      duration,
+      headersSize,
+      headersOutSize
+    )
+
+    registry.put(
+      serviceId,
+      registry.get(serviceId) match {
+        case Some(value) => value :+ newScore
+        case None => Seq(newScore)
+      }
+    )
+
+    println(s"""
+      $serviceId,    
+      $dataIn,       // size in body
+      $dataOut,      // size out body
+      $overhead,     // otoroshi computation with CB
+      $overheadWoCb, // otoroshi computation with without CB - can be a little pipe
+      $cbDuration,   // CB duration
+      $duration,     // request duration
+      $headersSize,  // headers in size
+      $headersOutSize, // headers out in size
+      """)     // complete duration of a request
   }
 }
