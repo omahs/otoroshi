@@ -20102,6 +20102,10 @@
             "type" : "boolean",
             "description" : "Enable report debugging"
           },
+          "green_score_rules" : {
+            "$ref" : "#/components/schemas/otoroshi.next.models.GreenScoreConfig",
+            "description" : "???"
+          },
           "enabled" : {
             "type" : "boolean",
             "description" : "Is the route enabled"

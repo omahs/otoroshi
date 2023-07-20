@@ -38,6 +38,7 @@ import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.util.{Failure, Success, Try}
 import otoroshi.utils.syntax.implicits._
 import otoroshi.wasm.{WasmConfig, WasmFunctionParameters, WasmUtils, WasmVm}
+import play.api.mvc.Results
 import software.amazon.awssdk.auth.credentials.{AwsBasicCredentials, StaticCredentialsProvider}
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.regions.providers.AwsRegionProvider
@@ -1296,33 +1297,42 @@ class EcoMetricsExporter(_config: DataExporterConfig)(implicit ec: ExecutionCont
           val overhead = (event \ "overhead").asOpt[Long].getOrElse(0L)
           val serviceId = (event \ "@serviceId").asOpt[String].getOrElse("global")
 
-          val method = (event \"method").asOpt[String].getOrElse("unknown")
-          val path = event.select("to").asOpt[String].getOrElse("unknown")
+          val method = (event \"method").asOpt[String].getOrElse("")
+          val path = event.select("url").asOpt[String].getOrElse("")
+          val protocol = event.select("protocol").asOpt[String].getOrElse("")
 
-          var headers = event.select("headers").asOpt[JsArray].getOrElse(Json.arr())
+          val routeOpt = event.select("route").asOpt[JsObject]
+
+          env.ecoMetrics.updateRoute(
+            routeId = routeOpt.flatMap(_.select("id").asOpt[String]).getOrElse(serviceId),
+            overhead = overhead,
+            overheadWoCb = overheadWoCb,
+            cbDuration = cbDuration,
+            duration = duration,
+            plugins = event.select("route").asOpt[JsObject].flatMap(_.select("plugins").asOpt[JsArray].map(_.value.size)).getOrElse(0),
+          )
+
+          val headers = event.select("headers").asOpt[JsArray].getOrElse(Json.arr())
           val headersOut = event.select("headersOut").asOpt[JsArray].getOrElse(Json.arr())
 
-          headers = headers :+ Json.obj("method" -> method)
-          headers = headers :+ Json.obj("to" -> path)
-
-//          println("otoroshiHeadersIn", event.select("otoroshiHeadersIn"))
-//          println("otoroshiHeadersOut", event.select("otoroshiHeadersOut"))
-
-          env.ecoMetrics.update(
-            dataIn,
-            dataOut,
-            overhead,
-            overheadWoCb,
-            cbDuration,
-            duration,
-            serviceId,
-            headers.value.foldLeft(0L) { case (acc, item) =>
+          env.ecoMetrics.updateBackend(
+            backendId = event.select("target").asOpt[JsObject].map(target => {
+              val scheme = target.select("scheme").asOpt[String].getOrElse("")
+              val host = target.select("host").asOpt[String].getOrElse("")
+              val uri = target.select("uri").asOpt[String].getOrElse("")
+              s"$scheme$host$uri"
+            }).getOrElse(s"$serviceId-target"),
+            dataIn = dataIn,
+            dataOut = dataOut,
+            headers = headers.value.foldLeft(0L) { case (acc, item) =>
               acc + item.as[JsObject].select("key").as[String].byteString.size + item.as[JsObject].select("value").as[String].byteString.size + 3 // 3 = ->
-            },
-            headersOut.value.foldLeft(0L) { case (acc, item) =>
+            } + method.byteString.size + path.byteString.size + protocol.byteString.size + 2,
+            headersOut = headersOut.value.foldLeft(0L) { case (acc, item) =>
               acc + item.as[JsObject].select("key").as[String].byteString.size + item.as[JsObject].select("value").as[String].byteString.size + 3 // 3 = ->
-            },
+            } + protocol.byteString.size + 1 + 3 + Results.Status(event.select("status").asOpt[Int].getOrElse(500)).header.reasonPhrase.map(_.byteString.size).getOrElse(0)
           )
+
+          println(s"Bullshitos global score: ${env.ecoMetrics.compute()}")
         } match {
           case Failure(e) => logger.error("error while collecting eco metrics", e)
           case _ =>

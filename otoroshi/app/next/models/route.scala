@@ -42,7 +42,8 @@ case class NgRoute(
     backend: NgBackend,
     backendRef: Option[String] = None,
     // client: ClientConfig,
-    plugins: NgPlugins
+    plugins: NgPlugins,
+    greenScoreRules: GreenScoreConfig = GreenScoreConfig(RulesManager.sections)
 ) extends EntityLocationSupport {
 
   def save()(implicit env: Env, ec: ExecutionContext): Future[Boolean] = env.datastores.routeDataStore.set(this)
@@ -67,7 +68,8 @@ case class NgRoute(
     "backend"          -> backend.json,
     "backend_ref"      -> backendRef.map(JsString.apply).getOrElse(JsNull).as[JsValue],
     // "client" -> client.toJson,
-    "plugins"          -> plugins.json
+    "plugins"          -> plugins.json,
+    "green_score_rules"-> greenScoreRules.json
   )
 
   def matches(
@@ -819,7 +821,8 @@ object NgRoute {
         },
         backendRef = ref,
         // client = (json \ "client").asOpt(ClientConfig.format).getOrElse(ClientConfig()),
-        plugins = NgPlugins.readFrom(json.select("plugins"))
+        plugins = NgPlugins.readFrom(json.select("plugins")),
+        greenScoreRules = GreenScoreConfig.readFrom(json.select("green_score_rules"))
       )
     } match {
       case Failure(exception) => JsError(exception.getMessage)

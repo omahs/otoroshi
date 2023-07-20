@@ -7,6 +7,7 @@ import { FeedbackButton } from './FeedbackButton';
 import { RouteForm } from './form';
 import { Button } from '../../components/Button';
 import { ENTITIES, FormSelector } from '../../components/FormSelector';
+import GreenScoreForm from './GreenScoreForm';
 
 export const Informations = forwardRef(
   ({ isCreation, value, setValue, setSaveButton, routeId }, ref) => {
@@ -237,6 +238,9 @@ export const Informations = forwardRef(
           label: 'Location',
         },
       },
+      greenScoreRules: {
+        renderer: GreenScoreForm
+      }
     };
 
     const flow = [
@@ -266,6 +270,12 @@ export const Informations = forwardRef(
         collapsed: true,
         fields: ['tags', 'metadata', 'core_metadata'],
       },
+      {
+        type: 'group',
+        name: 'Green score',
+        collapsed: false,
+        fields: ['greenScoreRules']
+      }
     ];
 
     return (
