@@ -2,7 +2,7 @@ import React, { forwardRef, useEffect, useImperativeHandle, useState } from 'rea
 import { LabelAndInput, NgBoxBooleanRenderer, NgForm } from '../../components/nginputs';
 import { nextClient } from '../../services/BackOfficeServices';
 import { useHistory, useLocation } from 'react-router-dom';
-import { useEntityFromURI } from '../../util';
+import { calculateGreenScore, useEntityFromURI } from '../../util';
 import { FeedbackButton } from './FeedbackButton';
 import { RouteForm } from './form';
 import { Button } from '../../components/Button';
@@ -272,7 +272,11 @@ export const Informations = forwardRef(
       },
       {
         type: 'group',
-        name: 'Green score',
+        name: ({ value }) => {
+          const rankInformations = calculateGreenScore(value.green_score_rules);
+          console.log(value.green_score_rules)
+          return <span>Green score <i className="fa fa-leaf" style={{ color: rankInformations.rank }} /></span>
+        },
         collapsed: false,
         fields: ['greenScoreRules']
       }

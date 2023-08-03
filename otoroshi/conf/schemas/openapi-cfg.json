@@ -2159,7 +2159,7 @@
     "otoroshi.next.extensions.Foo.metadata": "???",
     "otoroshi.next.extensions.Foo.name": "???",
     "otoroshi.next.extensions.Foo.tags": "???",
-    "otoroshi.next.models.GreenScoreConfig.rules": "???",
+    "otoroshi.next.models.GreenScoreConfig.sections": "???",
     "otoroshi.next.models.KvNgRouteCompositionDataStore._env": "???",
     "otoroshi.next.models.NgBackend.client": "Client config. of the backend",
     "otoroshi.next.models.NgBackend.healthCheck": "???",

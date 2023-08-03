@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useHistory, useParams } from 'react-router-dom';
 import { Table } from '../../components/inputs';
 import { nextClient } from '../../services/BackOfficeServices';
-import { useEntityFromURI } from '../../util';
+import { MAX_GREEN_SCORE_NOTE, calculateGreenScore, useEntityFromURI } from '../../util';
 
 export function RoutesTable(props) {
   const params = useParams();
@@ -64,6 +64,24 @@ export function RoutesTable(props) {
       ),
   };
 
+  const greenScoreColumn = {
+    title: 'Green Score',
+    id: 'green_score',
+    style: {
+      textAlign: 'center',
+      width: 100
+    },
+    notFilterable: true,
+    cell: (_, item) => {
+      const rankInformations = calculateGreenScore(item.green_score_rules);
+      console.log(rankInformations)
+      return <>
+        {Math.round(rankInformations.score/MAX_GREEN_SCORE_NOTE * 100)}
+        <i className="fa fa-leaf ms-2" style={{ color: rankInformations.rank }} />
+      </>
+    }
+  }
+
   const columns = [
     {
       title: 'Name',
@@ -85,6 +103,7 @@ export function RoutesTable(props) {
     entity.lowercase == 'route' ? domainColumn : undefined,
     entity.lowercase == 'route' ? targetColumn : undefined,
     exposedColumn,
+    greenScoreColumn
   ].filter((c) => c);
 
   const deleteItem = (item, table) => {
@@ -127,7 +146,7 @@ export function RoutesTable(props) {
         fetchItems={(paginationState) =>
           nextClient.findAllWithPagination(nextClient.ENTITIES[entity.fetchName], {
             ...paginationState,
-            fields: ['name', 'enabled', 'frontend.domains', 'backend.targets', 'id'],
+            fields: ['name', 'enabled', 'frontend.domains', 'backend.targets', 'id', 'green_score_rules'],
           })
         }
         showActions={true}

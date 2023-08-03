@@ -181,7 +181,7 @@ export class NgFormRenderer extends Component {
       try {
         title = isFunction(titleVar) ? titleVar(this.props.value) : titleVar.replace(/_/g, ' ');
       } catch (e) {
-        // console.log(e)
+        title = titleVar
       }
 
       const noTitle = rawSchemaProps.noTitle || rawSchema.noTitle;
