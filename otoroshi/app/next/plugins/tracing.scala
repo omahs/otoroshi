@@ -7,8 +7,9 @@ import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator
 import io.opentelemetry.api.trace.{Span, SpanKind, StatusCode}
 import io.opentelemetry.context.propagation.{ContextPropagators, TextMapGetter, TextMapPropagator, TextMapSetter}
 import io.opentelemetry.context.{Context, Scope}
-import io.opentelemetry.exporter.jaeger.JaegerGrpcSpanExporter
 import io.opentelemetry.exporter.logging.LoggingSpanExporter
+import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter
+import io.opentelemetry.exporter.otlp.trace.OtlpGrpcSpanExporter
 import io.opentelemetry.exporter.zipkin.ZipkinSpanExporter
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.common.CompletableResultCode
@@ -27,7 +28,6 @@ import play.api.mvc.Result
 
 import java.util.concurrent.TimeUnit
 import java.{lang, util}
-import scala.collection.concurrent.TrieMap
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters.asJavaIterableConverter
 import scala.util.{Failure, Success, Try}
@@ -51,15 +51,19 @@ sealed trait W3CTracingConfigKind {
   def name: String
 }
 object W3CTracingConfigKind       {
-  case object Jaeger extends W3CTracingConfigKind { def name: String = "jaeger" }
-  case object Zipkin extends W3CTracingConfigKind { def name: String = "zipkin" }
-  case object Logger extends W3CTracingConfigKind { def name: String = "logger" }
-  case object Noop   extends W3CTracingConfigKind { def name: String = "noop"   }
+  case object Jaeger   extends W3CTracingConfigKind { def name: String = "jaeger"    }
+  case object OtlpGrpc extends W3CTracingConfigKind { def name: String = "otlp-grpc" }
+  case object OtlpHttp extends W3CTracingConfigKind { def name: String = "otlp-http" }
+  case object Zipkin   extends W3CTracingConfigKind { def name: String = "zipkin"    }
+  case object Logger   extends W3CTracingConfigKind { def name: String = "logger"    }
+  case object Noop     extends W3CTracingConfigKind { def name: String = "noop"      }
   def parse(str: String): W3CTracingConfigKind = str.toLowerCase() match {
-    case "jaeger" => Jaeger
-    case "zipkin" => Zipkin
-    case "logger" => Logger
-    case _        => Noop
+    case "jaeger"    => Jaeger
+    case "otlp-grpc" => OtlpGrpc
+    case "otlp-http" => OtlpHttp
+    case "zipkin"    => Zipkin
+    case "logger"    => Logger
+    case _           => Noop
   }
 }
 
@@ -111,32 +115,56 @@ class W3CTracing extends NgRequestTransformer {
 
   def buildOpenTelemetry(config: W3CTracingConfig): SdkWrapper = {
     val sdkTracerProvider = config.kind match {
-      case W3CTracingConfigKind.Noop   =>
+      case W3CTracingConfigKind.Noop     =>
         SdkTracerProvider.builder
           .addSpanProcessor(SimpleSpanProcessor.create(NoopSpanExporter.getInstance))
           .build
-      case W3CTracingConfigKind.Logger =>
+      case W3CTracingConfigKind.Logger   =>
         SdkTracerProvider.builder
           .addSpanProcessor(SimpleSpanProcessor.create(LoggingSpanExporter.create()))
           .build
-      case W3CTracingConfigKind.Jaeger =>
+      case W3CTracingConfigKind.Jaeger   =>
         SdkTracerProvider.builder
           .addSpanProcessor(
             SimpleSpanProcessor.create(
-              JaegerGrpcSpanExporter
-                .builder()
+              OtlpGrpcSpanExporter
+                .builder() // TODO: more config
                 .setEndpoint(config.endpoint)
                 .setTimeout(config.timeout, TimeUnit.MILLISECONDS)
                 .build()
             )
           )
           .build
-      case W3CTracingConfigKind.Zipkin =>
+      case W3CTracingConfigKind.OtlpGrpc =>
+        SdkTracerProvider.builder
+          .addSpanProcessor(
+            SimpleSpanProcessor.create(
+              OtlpGrpcSpanExporter
+                .builder() // TODO: more config
+                .setEndpoint(config.endpoint)
+                .setTimeout(config.timeout, TimeUnit.MILLISECONDS)
+                .build()
+            )
+          )
+          .build
+      case W3CTracingConfigKind.OtlpHttp =>
+        SdkTracerProvider.builder
+          .addSpanProcessor(
+            SimpleSpanProcessor.create(
+              OtlpHttpSpanExporter
+                .builder() // TODO: more config
+                .setEndpoint(config.endpoint)
+                .setTimeout(config.timeout, TimeUnit.MILLISECONDS)
+                .build()
+            )
+          )
+          .build
+      case W3CTracingConfigKind.Zipkin   =>
         SdkTracerProvider.builder
           .addSpanProcessor(
             SimpleSpanProcessor.create(
               ZipkinSpanExporter
-                .builder()
+                .builder() // TODO: more config
                 .setEndpoint(config.endpoint)
                 .setReadTimeout(config.timeout, TimeUnit.MILLISECONDS)
                 .build()

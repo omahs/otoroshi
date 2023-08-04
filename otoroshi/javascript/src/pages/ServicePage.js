@@ -2,6 +2,7 @@ import React, { Component, Suspense } from 'react';
 import ReactDOM from 'react-dom';
 import PropTypes from 'prop-types';
 import YAML from 'yaml';
+import moment from 'moment';
 
 import cloneDeep from 'lodash/cloneDeep';
 import merge from 'lodash/merge';
@@ -46,7 +47,7 @@ import { Location } from '../components/Location';
 
 import Loader from '../components/Loader';
 import { Link } from 'react-router-dom';
-import { CIRCUIT_BREAKER_BACKOFF_FACTOR, CIRCUIT_BREAKER_CACHE_CONNECTION_SETTINGS_ENABLED, CIRCUIT_BREAKER_CALL_AND_STREAM_TIMEOUT, CIRCUIT_BREAKER_CALL_TIMEOUT, CIRCUIT_BREAKER_CLIENT_RETRIES, CIRCUIT_BREAKER_CONNECTION_TIMEOUT, CIRCUIT_BREAKER_CUSTOM_TIMEOUT_PATH, CIRCUIT_BREAKER_GLOBAL_TIMEOUT, CIRCUIT_BREAKER_IDLE_TIMEOUT, CIRCUIT_BREAKER_MAX_ERRORS, CIRCUIT_BREAKER_RETRY_INITIAL_DELAY } from '../explanations';
+import explainations from '../explainations';
 
 function shallowDiffers(a, b) {
   for (let i in a) if (!(i in b)) return true;
@@ -456,7 +457,7 @@ class CustomTimeoutComponent extends Component {
           label="Path"
           placeholder="/"
           value={value.path}
-          help={CIRCUIT_BREAKER_CUSTOM_TIMEOUT_PATH}
+          help={explainations.CIRCUIT_BREAKER_CUSTOM_TIMEOUT_PATH}
           onChange={(e) => this.changeTheValue('path', e)}
         />
         <NumberInput
@@ -464,7 +465,7 @@ class CustomTimeoutComponent extends Component {
           label="Client connection timeout"
           placeholder="10000"
           value={value.connectionTimeout}
-          help={CIRCUIT_BREAKER_CONNECTION_TIMEOUT}
+          help={explainations.CIRCUIT_BREAKER_CONNECTION_TIMEOUT}
           onChange={(e) => this.changeTheValue('connectionTimeout', e)}
         />
         <NumberInput
@@ -472,7 +473,7 @@ class CustomTimeoutComponent extends Component {
           label="Client idle timeout"
           placeholder="10000"
           value={value.idleTimeout}
-          help={CIRCUIT_BREAKER_IDLE_TIMEOUT}
+          help={explainations.CIRCUIT_BREAKER_IDLE_TIMEOUT}
           onChange={(e) => this.changeTheValue('idleTimeout', e)}
         />
         <NumberInput
@@ -480,7 +481,7 @@ class CustomTimeoutComponent extends Component {
           label="Client call and stream timeout"
           placeholder="10000"
           value={value.callAndStreamTimeout}
-          help={CIRCUIT_BREAKER_CALL_AND_STREAM_TIMEOUT}
+          help={explainations.CIRCUIT_BREAKER_CALL_AND_STREAM_TIMEOUT}
           onChange={(e) => this.changeTheValue('callAndStreamTimeout', e)}
         />
         <NumberInput
@@ -488,7 +489,7 @@ class CustomTimeoutComponent extends Component {
           label="Call timeout"
           placeholder="10000"
           value={value.callTimeout}
-          help={CIRCUIT_BREAKER_CALL_TIMEOUT}
+          help={explainations.CIRCUIT_BREAKER_CALL_TIMEOUT}
           onChange={(e) => this.changeTheValue('callTimeout', e)}
         />
         <NumberInput
@@ -496,7 +497,7 @@ class CustomTimeoutComponent extends Component {
           label="Client global timeout"
           placeholder="10000"
           value={value.globalTimeout}
-          help={CIRCUIT_BREAKER_GLOBAL_TIMEOUT}
+          help={explainations.CIRCUIT_BREAKER_GLOBAL_TIMEOUT}
           onChange={(e) => this.changeTheValue('globalTimeout', e)}
         />
         <Separator />
@@ -689,6 +690,7 @@ export class ServicePage extends Component {
     } else {
       this.setState({ env: this.props.env });
     }
+    console.log(explainations.CIRCUIT_BREAKER_RETRY_INITIAL_DELAY);
   }
 
   componentWillReceiveProps(nextProps) {
@@ -1157,30 +1159,43 @@ export class ServicePage extends Component {
   };
 
   convertToRoute = () => {
-    window.newConfirm(
-      "Are you sure you want to do that ? your current service will be disabled, but you'll have to delete it yourself.",
-      (ok) => {
+    window
+      .newConfirm(
+        "Are you sure you want to do that ? your current service will be disabled, but you'll have to delete it yourself."
+      )
+      .then((ok) => {
         if (ok) {
           BackOfficeServices.convertAsRoute(this.state.service.id).then((res) => {
             BackOfficeServices.nextClient
               .forEntity('routes')
-              .create(res)
+              .create({
+                ...res,
+                metadata: {
+                  ...res.metadata,
+                  converted_from_service_by: window.__user.email + ' - ' + window.__user.name,
+                  converted_from_service_at: moment().format('YYYY-MM-DD hh:mm:ss'),
+                },
+              })
               .then(() => {
                 const newService = {
                   ...this.state.service,
                   name: '[MIGRATED TO ROUTE, PENDING DELETION] ' + this.state.service.name,
                   enabled: false,
+                  metadata: {
+                    ...this.state.service.metadata,
+                    converted_to_route_by: window.__user.email + ' - ' + window.__user.name,
+                    converted_to_route_at: moment().format('YYYY-MM-DD hh:mm:ss'),
+                  },
                 };
                 this.setState({ service: newService }, () => {
-                  BackOfficeServices.saveService(newService).then(() => {
+                  BackOfficeServices.updateService(newService.id, newService).then(() => {
                     this.props.history.push(`/routes/${res.id}?tab=informations`);
                   });
                 });
               });
           });
         }
-      }
-    );
+      });
   };
 
   render() {
@@ -2840,7 +2855,7 @@ export class ServicePage extends Component {
             {this.state.service.useAkkaHttpClient && (
               <BooleanInput
                 label="Cache connections"
-                help={CIRCUIT_BREAKER_CACHE_CONNECTION_SETTINGS_ENABLED}
+                help={explainations.CIRCUIT_BREAKER_CACHE_CONNECTION_SETTINGS_ENABLED}
                 value={this.state.service.clientConfig.cacheConnectionSettings.enabled}
                 onChange={(v) =>
                   this.changeTheValue('clientConfig.cacheConnectionSettings.enabled', v)
@@ -2850,42 +2865,42 @@ export class ServicePage extends Component {
             <NumberInput
               suffix="times"
               label="Client attempts"
-              help={CIRCUIT_BREAKER_CLIENT_RETRIES}
+              help={explainations.CIRCUIT_BREAKER_CLIENT_RETRIES}
               value={this.state.service.clientConfig.retries}
               onChange={(v) => this.changeTheValue('clientConfig.retries', v)}
             />
             <NumberInput
               suffix="ms."
               label="Client call timeout"
-              help={CIRCUIT_BREAKER_CALL_TIMEOUT}
+              help={explainations.CIRCUIT_BREAKER_CALL_TIMEOUT}
               value={this.state.service.clientConfig.callTimeout}
               onChange={(v) => this.changeTheValue('clientConfig.callTimeout', v)}
             />
             <NumberInput
               suffix="ms."
               label="Client call and stream timeout"
-              help={CIRCUIT_BREAKER_CALL_AND_STREAM_TIMEOUT}
+              help={explainations.CIRCUIT_BREAKER_CALL_AND_STREAM_TIMEOUT}
               value={this.state.service.clientConfig.callAndStreamTimeout}
               onChange={(v) => this.changeTheValue('clientConfig.callAndStreamTimeout', v)}
             />
             <NumberInput
               suffix="ms."
               label="Client connection timeout"
-              help={CIRCUIT_BREAKER_CONNECTION_TIMEOUT}
+              help={explainations.CIRCUIT_BREAKER_CONNECTION_TIMEOUT}
               value={this.state.service.clientConfig.connectionTimeout}
               onChange={(v) => this.changeTheValue('clientConfig.connectionTimeout', v)}
             />
             <NumberInput
               suffix="ms."
               label="Client idle timeout"
-              help={CIRCUIT_BREAKER_IDLE_TIMEOUT}
+              help={explainations.CIRCUIT_BREAKER_IDLE_TIMEOUT}
               value={this.state.service.clientConfig.idleTimeout}
               onChange={(v) => this.changeTheValue('clientConfig.idleTimeout', v)}
             />
             <NumberInput
               suffix="ms."
               label="Client global timeout"
-              help={CIRCUIT_BREAKER_GLOBAL_TIMEOUT}
+              help={explainations.CIRCUIT_BREAKER_GLOBAL_TIMEOUT}
               value={this.state.service.clientConfig.globalTimeout}
               onChange={(v) => this.changeTheValue('clientConfig.globalTimeout', v)}
             />
@@ -2893,20 +2908,20 @@ export class ServicePage extends Component {
               suffix="times"
               label="C.breaker max errors"
               value={this.state.service.clientConfig.maxErrors}
-              help={CIRCUIT_BREAKER_MAX_ERRORS}
+              help={explainations.CIRCUIT_BREAKER_MAX_ERRORS}
               onChange={(v) => this.changeTheValue('clientConfig.maxErrors', v)}
             />
             <NumberInput
               suffix="ms."
               label="C.breaker retry delay"
               value={this.state.service.clientConfig.retryInitialDelay}
-              help={CIRCUIT_BREAKER_RETRY_INITIAL_DELAY}
+              help={explainations.CIRCUIT_BREAKER_RETRY_INITIAL_DELAY}
               onChange={(v) => this.changeTheValue('clientConfig.retryInitialDelay', v)}
             />
             <NumberInput
               suffix="times"
               label="C.breaker backoff factor"
-              help={CIRCUIT_BREAKER_BACKOFF_FACTOR}
+              help={explainations.CIRCUIT_BREAKER_BACKOFF_FACTOR}
               value={this.state.service.clientConfig.backoffFactor}
               onChange={(v) => this.changeTheValue('clientConfig.backoffFactor', v)}
             />
@@ -2914,7 +2929,7 @@ export class ServicePage extends Component {
               suffix="ms."
               label="C.breaker window"
               value={this.state.service.clientConfig.sampleInterval}
-              help={CIRCUIT_BREAKER_SAMPLE_INTERVAL}
+              help={explainations.CIRCUIT_BREAKER_SAMPLE_INTERVAL}
               onChange={(v) => this.changeTheValue('clientConfig.sampleInterval', v)}
             />
             <Separator title="Custom timeout settings" />

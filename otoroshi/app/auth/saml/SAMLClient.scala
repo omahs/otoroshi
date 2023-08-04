@@ -1,6 +1,8 @@
 package otoroshi.auth
 
 import akka.http.scaladsl.util.FastFuture
+import com.auth0.jwt.JWT
+import com.auth0.jwt.algorithms.Algorithm
 import com.nimbusds.jose.util.X509CertUtils
 import net.shibboleth.utilities.java.support.xml.BasicParserPool
 import org.apache.pulsar.shade.org.apache.commons.io.IOUtils
@@ -20,7 +22,11 @@ import org.opensaml.security.x509.BasicX509Credential
 import org.opensaml.xmlsec.SignatureSigningParameters
 import org.opensaml.xmlsec.encryption.support.InlineEncryptedKeyResolver
 import org.opensaml.xmlsec.keyinfo.KeyInfoCredentialResolver
-import org.opensaml.xmlsec.keyinfo.impl.{ChainingKeyInfoCredentialResolver, StaticKeyInfoCredentialResolver, X509KeyInfoGeneratorFactory}
+import org.opensaml.xmlsec.keyinfo.impl.{
+  ChainingKeyInfoCredentialResolver,
+  StaticKeyInfoCredentialResolver,
+  X509KeyInfoGeneratorFactory
+}
 import org.opensaml.xmlsec.signature.Signature
 import org.opensaml.xmlsec.signature.impl.SignatureBuilder
 import org.opensaml.xmlsec.signature.support.{SignatureConstants, SignatureException, SignatureSupport}
@@ -54,7 +60,6 @@ import javax.xml.namespace.QName
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters.{asScalaBufferConverter, asScalaSetConverter}
 import scala.util.Try
-
 import java.util.zip.Deflater
 
 case class SAMLModule(authConfig: SamlAuthModuleConfig) extends AuthModule {
@@ -75,24 +80,42 @@ case class SAMLModule(authConfig: SamlAuthModuleConfig) extends AuthModule {
     implicit val req: RequestHeader = request
 
     val redirect   = request.getQueryString("redirect")
-    val hash       = env.sign(s"${authConfig.id}:::backoffice")
-    val relayState = URLEncoder.encode(
-      s"hash=$hash&desc=${descriptor.id}&redirect_uri=${redirect.getOrElse(
-        routes.PrivateAppsController.home.absoluteURL(env.exposedRootSchemeIsHttps)
-      )}&route=$isRoute&ref=${authConfig.id}",
-      "UTF-8"
+    val redirectTo = redirect.getOrElse(
+      routes.PrivateAppsController.home.absoluteURL(env.exposedRootSchemeIsHttps)
     )
-
+    val hash       = env.sign(s"${authConfig.id}:::${descriptor.id}")
+    val relayState = JWT
+      .create()
+      .withClaim("hash", hash)
+      .withClaim("desc", descriptor.id)
+      .withClaim("route", isRoute)
+      .withClaim("ref", authConfig.id)
+      .withClaim("redirect_uri", redirectTo)
+      .sign(Algorithm.HMAC512(env.otoroshiSecret))
+    //URLEncoder.encode(
+    //  s"hash=$hash&desc=${descriptor.id}&redirect_uri=${redirectTo}&route=$isRoute&ref=${authConfig.id}",
+    //  "UTF-8"
+    //)
     getRequest(env, authConfig).map {
       case Left(value)    => BadRequest(value)
       case Right(encoded) =>
         if (authConfig.ssoProtocolBinding == SAMLProtocolBinding.Post)
           Ok(otoroshi.views.html.oto.saml(encoded, authConfig.singleSignOnUrl, env, Some(relayState)))
-        else
-          Redirect(
+        else {
+          val redirectUrl = if (authConfig.singleSignOnUrl.contains("?")) {
+            s"${authConfig.singleSignOnUrl}&SAMLRequest=${URLEncoder.encode(encoded, "UTF-8")}&RelayState=$relayState"
+          } else {
             s"${authConfig.singleSignOnUrl}?SAMLRequest=${URLEncoder.encode(encoded, "UTF-8")}&RelayState=$relayState"
-          )
-            .addingToSession("hash" -> env.sign(s"${authConfig.id}:::backoffice"))
+          }
+          Redirect(redirectUrl)
+            .addingToSession(
+              s"pa-redirect-after-login-${authConfig.cookieSuffix(descriptor)}" -> redirectTo,
+              "hash"                                                            -> env.sign(s"${authConfig.id}:::${descriptor.id}"),
+              "desc"                                                            -> descriptor.id,
+              "ref"                                                             -> authConfig.id,
+              "route"                                                           -> s"$isRoute"
+            )
+        }
     }
   }
 
@@ -104,19 +127,23 @@ case class SAMLModule(authConfig: SamlAuthModuleConfig) extends AuthModule {
   )(implicit ec: ExecutionContext, env: Env): Future[Either[Result, Option[String]]] = {
     getLogoutRequest(env, authConfig, user.map(_.metadata.getOrElse("saml-id", ""))).map {
       case Left(_)        => Right(None)
-      case Right(encoded) => authConfig.singleLogoutUrl match {
-        case None => Left(Results.InternalServerError(Json.obj("error" -> "no logout url configured !")))
-        case Some(singleLogoutUrl) => {
-          if (authConfig.singleLogoutProtocolBinding == SAMLProtocolBinding.Post)
-            Left(Ok(otoroshi.views.html.oto.saml(encoded, singleLogoutUrl, env)))
-          else {
-            env.Ws
-              .url(s"${singleLogoutUrl}?SAMLRequest=${URLEncoder.encode(encoded, "UTF-8")}")
-              .get()
-            Right(None)
+      case Right(encoded) =>
+        authConfig.singleLogoutUrl match {
+          case None                  => Left(Results.InternalServerError(Json.obj("error" -> "no logout url configured !")))
+          case Some(singleLogoutUrl) => {
+            if (authConfig.singleLogoutProtocolBinding == SAMLProtocolBinding.Post)
+              Left(Ok(otoroshi.views.html.oto.saml(encoded, singleLogoutUrl, env)))
+            else {
+              val redirectUrl = if (authConfig.singleLogoutUrl.contains("?")) {
+                s"${singleLogoutUrl}&SAMLRequest=${URLEncoder.encode(encoded, "UTF-8")}"
+              } else {
+                s"${singleLogoutUrl}?SAMLRequest=${URLEncoder.encode(encoded, "UTF-8")}"
+              }
+              env.Ws.url(redirectUrl).get()
+              Right(None)
+            }
           }
         }
-      }
     }
   }
 
@@ -198,8 +225,12 @@ case class SAMLModule(authConfig: SamlAuthModuleConfig) extends AuthModule {
         if (authConfig.ssoProtocolBinding == SAMLProtocolBinding.Post)
           Ok(otoroshi.views.html.oto.saml(encoded, authConfig.singleSignOnUrl, env))
         else {
-          Redirect(s"${authConfig.singleSignOnUrl}?SAMLRequest=${URLEncoder.encode(encoded, "UTF-8")}")
-            .addingToSession("hash" -> env.sign(s"${authConfig.id}:::backoffice"))(request)
+          val redirectUrl = if (authConfig.singleSignOnUrl.contains("?")) {
+            s"${authConfig.singleSignOnUrl}&SAMLRequest=${URLEncoder.encode(encoded, "UTF-8")}"
+          } else {
+            s"${authConfig.singleSignOnUrl}?SAMLRequest=${URLEncoder.encode(encoded, "UTF-8")}"
+          }
+          Redirect(redirectUrl).addingToSession("hash" -> env.sign(s"${authConfig.id}:::backoffice"))(request)
         }
     }
   }
@@ -208,22 +239,25 @@ case class SAMLModule(authConfig: SamlAuthModuleConfig) extends AuthModule {
       ec: ExecutionContext,
       env: Env
   ): Future[Either[Result, Option[String]]] = {
-
     getLogoutRequest(env, authConfig, Some(user.metadata.getOrElse("saml-id", ""))).map {
       case Left(_)        => Right(None)
-      case Right(encoded) => authConfig.singleLogoutUrl match {
-        case None => Left(Results.InternalServerError(Json.obj("error" -> "no logout url configured !")))
-        case Some(singleLogoutUrl) => {
-          if (authConfig.singleLogoutProtocolBinding == SAMLProtocolBinding.Post)
-            Left(Ok(otoroshi.views.html.oto.saml(encoded, singleLogoutUrl, env)))
-          else {
-            env.Ws
-              .url(s"${singleLogoutUrl}?SAMLRequest=${URLEncoder.encode(encoded, "UTF-8")}")
-              .get()
-            Right(None)
+      case Right(encoded) =>
+        authConfig.singleLogoutUrl match {
+          case None                  => Left(Results.InternalServerError(Json.obj("error" -> "no logout url configured !")))
+          case Some(singleLogoutUrl) => {
+            if (authConfig.singleLogoutProtocolBinding == SAMLProtocolBinding.Post)
+              Left(Ok(otoroshi.views.html.oto.saml(encoded, singleLogoutUrl, env)))
+            else {
+              val redirectUrl = if (authConfig.singleLogoutUrl.contains("?")) {
+                s"${singleLogoutUrl}&SAMLRequest=${URLEncoder.encode(encoded, "UTF-8")}"
+              } else {
+                s"${singleLogoutUrl}?SAMLRequest=${URLEncoder.encode(encoded, "UTF-8")}"
+              }
+              env.Ws.url(redirectUrl).get()
+              Right(None)
+            }
           }
         }
-      }
     }
   }
 
@@ -416,7 +450,8 @@ object SamlAuthModuleConfig extends FromJson[AuthModuleConfig] {
               name = "SAML Module",
               desc = "SAML Module",
               singleSignOnUrl = idpssoDescriptor.getSingleSignOnServices.get(0).getLocation,
-              singleLogoutUrl = Try(idpssoDescriptor.getSingleLogoutServices.get(0).getLocation).filter(_ != null).toOption,
+              singleLogoutUrl =
+                Try(idpssoDescriptor.getSingleLogoutServices.get(0).getLocation).filter(_ != null).toOption,
               issuer = entityDescriptor.getEntityID,
               ssoProtocolBinding = SAMLProtocolBinding(idpssoDescriptor.getSingleSignOnServices.get(0).getBinding),
               singleLogoutProtocolBinding =
@@ -786,7 +821,7 @@ object SAMLModule {
     request.setIssuer(issuer)
 
     val subject = buildObject(Subject.DEFAULT_ELEMENT_NAME).asInstanceOf[Subject]
-    val nameID = buildObject(NameID.DEFAULT_ELEMENT_NAME).asInstanceOf[NameID]
+    val nameID  = buildObject(NameID.DEFAULT_ELEMENT_NAME).asInstanceOf[NameID]
     nameID.setValue("z" + UUID.randomUUID().toString)
     subject.setNameID(nameID)
     request.setSubject(subject)
@@ -832,7 +867,7 @@ object SAMLModule {
     val dom          = marshaller.marshall(request)
 
     XMLHelper.writeNode(dom, stringWriter)
-    val body = stringWriter.toString
+    val body         = stringWriter.toString
     val deflatedBody = doDeflate(body.getBytes(StandardCharsets.UTF_8))
 
     org.apache.commons.codec.binary.Base64.encodeBase64URLSafeString(deflatedBody)
@@ -1026,16 +1061,16 @@ object SAMLModule {
   }
 
   def doDeflate(dataBytes: Array[Byte]): Array[Byte] = {
-    var compBufSize = 655316
+    var compBufSize          = 655316
     if (compBufSize < dataBytes.length + 5) {
       compBufSize = dataBytes.length + 5
     }
-    val compBuf = new Array[Byte](compBufSize)
-    val compresser = new Deflater(9, true)
+    val compBuf              = new Array[Byte](compBufSize)
+    val compresser           = new Deflater(9, true)
     compresser.setInput(dataBytes)
     compresser.finish
     val compressedDataLength = compresser.deflate(compBuf)
-    val compressedData = new Array[Byte](compressedDataLength)
+    val compressedData       = new Array[Byte](compressedDataLength)
     System.arraycopy(compBuf, 0, compressedData, 0, compressedDataLength)
     compressedData
   }

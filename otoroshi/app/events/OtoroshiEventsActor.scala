@@ -8,16 +8,36 @@ import akka.actor.{Actor, Props}
 import akka.http.scaladsl.model.{ContentType, ContentTypes}
 import akka.http.scaladsl.util.FastFuture
 import akka.stream.alpakka.s3.scaladsl.S3
-import akka.stream.alpakka.s3.{ApiVersion, ListBucketResultContents, MemoryBufferType, MetaHeaders, S3Attributes, S3Settings}
+import akka.stream.alpakka.s3.{
+  ApiVersion,
+  ListBucketResultContents,
+  MemoryBufferType,
+  MetaHeaders,
+  S3Attributes,
+  S3Settings
+}
 import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
 import akka.stream.{Attributes, OverflowStrategy, QueueOfferResult}
 import com.sksamuel.pulsar4s.Producer
 import com.spotify.metrics.core.MetricId
+import io.opentelemetry.api.logs.Severity
+import io.opentelemetry.exporter.otlp.http.logs.OtlpHttpLogRecordExporter
+import io.opentelemetry.exporter.otlp.http.metrics.OtlpHttpMetricExporter
+import io.opentelemetry.exporter.otlp.logs.OtlpGrpcLogRecordExporter
+import io.opentelemetry.exporter.otlp.metrics.OtlpGrpcMetricExporter
+import io.opentelemetry.sdk.OpenTelemetrySdk
+import io.opentelemetry.sdk.logs.SdkLoggerProvider
+import io.opentelemetry.sdk.logs.`export`.{BatchLogRecordProcessor, LogRecordExporter}
+import io.opentelemetry.sdk.metrics.SdkMeterProvider
+import io.opentelemetry.sdk.metrics.`export`.{MetricExporter, PeriodicMetricReader}
+import io.opentelemetry.sdk.resources.Resource
+import io.opentelemetry.semconv.resource.attributes.ResourceAttributes
 import otoroshi.env.Env
 import otoroshi.events.DataExporter.DefaultDataExporter
 import otoroshi.events.impl.{ElasticWritesAnalytics, WebHookAnalytics}
 import otoroshi.models._
 import org.joda.time.DateTime
+import otoroshi.metrics.opentelemetry.{OpenTelemetryMeter, OtlpSettings}
 import otoroshi.models.{DataExporterConfig, Exporter, ExporterRef, FileSettings}
 import otoroshi.next.events.TrafficCaptureEvent
 import otoroshi.next.plugins.FakeWasmContext
@@ -30,7 +50,20 @@ import otoroshi.utils.cache.types.UnboundedTrieMap
 import otoroshi.utils.json.JsonOperationsHelper
 import otoroshi.utils.mailer.{EmailLocation, MailerSettings}
 import play.api.Logger
-import play.api.libs.json.{Format, JsArray, JsBoolean, JsError, JsNull, JsNumber, JsObject, JsResult, JsString, JsSuccess, JsValue, Json}
+import play.api.libs.json.{
+  Format,
+  JsArray,
+  JsBoolean,
+  JsError,
+  JsNull,
+  JsNumber,
+  JsObject,
+  JsResult,
+  JsString,
+  JsSuccess,
+  JsValue,
+  Json
+}
 
 import scala.collection.concurrent.TrieMap
 import scala.concurrent.duration._
@@ -1041,6 +1074,10 @@ object Exporters {
     }
   }
 
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
   sealed trait MetricSettingsKind
 
   object MetricSettingsKind {
@@ -1156,12 +1193,15 @@ object Exporters {
       exporter[CustomMetricsSettings].foreach { exporterConfig =>
         events.foreach { event =>
           exporterConfig.metrics.map { metric =>
-            val id =
+            val id                   =
               MetricId.build(metric.id).tagged((exporterConfig.tags ++ extractLabels(metric.labels, event)).asJava)
-            if (
-              (event \ "@type").asOpt[String] == metric.eventType ||
-              (event \ "alert").asOpt[String] == metric.eventType
-            ) {
+            val shouldTriggerOnType  = metric.eventType
+              .map(typeSelector => (event \ "@type").asOpt[String].contains(typeSelector))
+              .getOrElse(true)
+            val shouldTriggerOnAlert = metric.eventType
+              .map(typeSelector => (event \ "alert").asOpt[String].contains(typeSelector))
+              .getOrElse(true)
+            if (shouldTriggerOnType || shouldTriggerOnAlert) {
               metric.kind match {
                 case MetricSettingsKind.Counter if metric.selector.isEmpty   =>
                   env.metrics.counterInc(id)
@@ -1185,6 +1225,10 @@ object Exporters {
       FastFuture.successful(ExportResult.ExportResultSuccess)
     }
   }
+
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   case class WasmExporterSettings(params: JsObject, wasmRef: Option[String]) extends Exporter {
     def json: JsValue   = WasmExporterSettings.format.writes(this)
@@ -1226,28 +1270,193 @@ object Exporters {
               )
               // println(s"call send: ${events.size}")
               WasmVm.fromConfig(plugin.config).flatMap {
-                case None => ExportResult.ExportResultFailure("plugin not found !").vfuture
+                case None          => ExportResult.ExportResultFailure("plugin not found !").vfuture
                 case Some((vm, _)) =>
-                  vm.call(WasmFunctionParameters.ExtismFuntionCall("export_events", (input ++ Json.obj("events" -> JsArray(events))).stringify), None)
-                    .map {
-                      case Left(err) => ExportResult.ExportResultFailure(err.stringify)
-                      case Right(res) =>
-                        res._1.parseJson.select("error").asOpt[JsValue] match {
-                          case None => ExportResult.ExportResultSuccess
-                          case Some(error) => ExportResult.ExportResultFailure(error.stringify)
-                        }
-                    }
-                    .recover { case e =>
-                      e.printStackTrace()
-                      ExportResult.ExportResultFailure(e.getMessage)
-                    }
-                    .andThen {
-                      case _ => vm.release()
-                    }
+                  vm.call(
+                    WasmFunctionParameters
+                      .ExtismFuntionCall("export_events", (input ++ Json.obj("events" -> JsArray(events))).stringify),
+                    None
+                  ).map {
+                    case Left(err)  => ExportResult.ExportResultFailure(err.stringify)
+                    case Right(res) =>
+                      res._1.parseJson.select("error").asOpt[JsValue] match {
+                        case None        => ExportResult.ExportResultSuccess
+                        case Some(error) => ExportResult.ExportResultFailure(error.stringify)
+                      }
+                  }.recover { case e =>
+                    e.printStackTrace()
+                    ExportResult.ExportResultFailure(e.getMessage)
+                  }.andThen { case _ =>
+                    vm.release()
+                  }
               }
             }
         }
         .getOrElse(ExportResult.ExportResultSuccess.vfuture)
+    }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  case class OtlpMetricsExporterSettings(
+      otlp: OtlpSettings,
+      tags: Map[String, String] = Map.empty,
+      metrics: Seq[MetricSettings] = Seq.empty
+  ) extends Exporter {
+    override def toJson: JsValue = OtlpMetricsExporterSettings.format.writes(this)
+  }
+
+  object OtlpMetricsExporterSettings {
+    val format = new Format[OtlpMetricsExporterSettings] {
+      override def writes(o: OtlpMetricsExporterSettings): JsValue             = Json.obj(
+        "type"    -> "otlp-metrics",
+        "tags"    -> o.tags,
+        "metrics" -> JsArray(o.metrics.map(_.toJson)),
+        "otlp"    -> o.otlp.json
+      )
+      override def reads(json: JsValue): JsResult[OtlpMetricsExporterSettings] = Try {
+        OtlpMetricsExporterSettings(
+          otlp = json.select("otlp").asOpt[JsObject].map(OtlpSettings.format.reads).map(_.get).get,
+          tags = json.select("tags").asOpt[Map[String, String]].getOrElse(Map.empty[String, String]),
+          metrics = json
+            .select("metrics")
+            .asOpt[Seq[JsValue]]
+            .map(arr => arr.flatMap(v => MetricSettings.format.reads(v).asOpt))
+            .getOrElse(Seq.empty)
+        )
+      } match {
+        case Failure(e) => JsError(e.getMessage)
+        case Success(e) => JsSuccess(e)
+      }
+    }
+  }
+
+  case class OtlpLogsExporterSettings(otlp: OtlpSettings) extends Exporter {
+    override def toJson: JsValue = OtlpLogsExporterSettings.format.writes(this)
+  }
+
+  object OtlpLogsExporterSettings {
+    val format = new Format[OtlpLogsExporterSettings] {
+      override def writes(o: OtlpLogsExporterSettings): JsValue             = Json.obj(
+        "type" -> "otlp-logs",
+        "otlp" -> o.otlp.json
+      )
+      override def reads(json: JsValue): JsResult[OtlpLogsExporterSettings] = Try {
+        OtlpLogsExporterSettings(
+          otlp = json.select("otlp").asOpt[JsObject].map(OtlpSettings.format.reads).map(_.get).get
+        )
+      } match {
+        case Failure(e) => JsError(e.getMessage)
+        case Success(e) => JsSuccess(e)
+      }
+    }
+  }
+
+  class OtlpLogExporter(config: DataExporterConfig)(implicit ec: ExecutionContext, env: Env)
+      extends DefaultDataExporter(config)(ec, env) {
+
+    override def send(events: Seq[JsValue]): Future[ExportResult] = exporter[OtlpLogsExporterSettings] match {
+      case None                 => ExportResult.ExportResultFailure("Bad config type !").vfuture
+      case Some(exporterConfig) =>
+        try {
+          val sdk    = OtlpSettings.sdkFor(config.id, config.name, exporterConfig.otlp, env)
+          val logger = sdk.sdk.getSdkLoggerProvider.get(env.clusterConfig.name)
+          events.foreach { evt =>
+            val isAlert = evt.select("@type").asOpt[String].contains("AlertEvent")
+            logger
+              .logRecordBuilder()
+              .setSeverity(if (isAlert) Severity.ERROR else Severity.INFO)
+              .setBody(evt.stringify)
+              //.setAllAttributes() // TODO
+              .emit()
+          }
+          ExportResult.ExportResultSuccess.vfuture
+        } catch {
+          case e: Throwable => ExportResult.ExportResultFailure(e.getMessage).vfuture
+        }
+    }
+  }
+
+  class OtlpMetricsExporter(config: DataExporterConfig)(implicit ec: ExecutionContext, env: Env)
+      extends DefaultDataExporter(config)(ec, env) {
+
+    override def send(events: Seq[JsValue]): Future[ExportResult] = exporter[OtlpMetricsExporterSettings] match {
+      case None                 => ExportResult.ExportResultFailure("Bad config type !").vfuture
+      case Some(exporterConfig) => {
+        val sdk   = OtlpSettings.sdkFor(config.id, config.name, exporterConfig.otlp, env)
+        val meter = new OpenTelemetryMeter(
+          sdk,
+          sdk.sdk
+            .meterBuilder(env.clusterConfig.name)
+            .setInstrumentationVersion(env.otoroshiVersion)
+            .build()
+        )
+        events.foreach { event =>
+          exporterConfig.metrics.map { metric =>
+            try {
+              val labels: Map[String, String] = exporterConfig.tags ++ extractLabels(metric.labels, event)
+              val attributes                  = labels
+                .foldLeft(io.opentelemetry.api.common.Attributes.builder()) { case (builder, (a, b)) =>
+                  builder.put(a, b)
+                }
+                .build()
+              val id                          = metric.id
+              val shouldTriggerOnType         = metric.eventType
+                .map(typeSelector => (event \ "@type").asOpt[String].contains(typeSelector))
+                .getOrElse(true)
+              val shouldTriggerOnAlert        = metric.eventType
+                .map(typeSelector => (event \ "alert").asOpt[String].contains(typeSelector))
+                .getOrElse(true)
+              if (shouldTriggerOnType || shouldTriggerOnAlert) {
+                metric.kind match {
+                  case MetricSettingsKind.Counter if metric.selector.isEmpty   =>
+                    meter.withLongCounter(id).add(1L, attributes)
+                  case MetricSettingsKind.Counter if metric.selector.isDefined =>
+                    withEventLongValue(event, metric.selector) { v =>
+                      meter.withLongCounter(id).add(Math.abs(v), attributes)
+                    }
+                  case MetricSettingsKind.Histogram                            =>
+                    withEventLongValue(event, metric.selector) { v =>
+                      meter.withLongHistogram(id).record(Math.abs(v), attributes)
+                    }
+                  case MetricSettingsKind.Timer                                =>
+                    withEventLongValue(event, metric.selector) { v =>
+                      meter.withTimer(id).record(Math.abs(FiniteDuration(v, TimeUnit.MILLISECONDS).toNanos), attributes)
+                    }
+                }
+              }
+            } catch {
+              case e: Throwable => e.printStackTrace()
+            }
+          }
+        }
+        ExportResult.ExportResultSuccess.vfuture
+      }
+    }
+
+    def withEventLongValue(event: JsValue, selector: Option[String])(f: Long => Unit): Unit = {
+      selector match {
+        case None       => ()
+        case Some(path) =>
+          JsonOperationsHelper.getValueAtPath(path, event)._2.asOpt[Long] match {
+            case None        => f(1)
+            case Some(value) => f(value)
+          }
+      }
+    }
+
+    def extractLabels(labels: Map[String, String], event: JsValue): Map[String, String] = {
+      labels.foldLeft(Map.empty[String, String]) { case (acc, label) =>
+        acc + (label._2 -> JsonOperationsHelper
+          .getValueAtPath(label._1, event)
+          ._2
+          .asOpt[String]
+          .getOrElse(
+            JsonOperationsHelper.getValueAtPath(label._1.replace("$at", "@"), event)._2.asOpt[String].getOrElse("")
+          ))
+      }
     }
   }
 }

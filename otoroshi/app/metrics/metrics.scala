@@ -1,7 +1,8 @@
-package otoroshi.utils.metrics
+package otoroshi.metrics
 
 import akka.actor.Cancellable
 import akka.http.scaladsl.util.FastFuture
+import com.codahale.metrics._
 import com.codahale.metrics.jmx.JmxReporter
 import com.codahale.metrics.json.MetricsModule
 import com.codahale.metrics.jvm.{
@@ -10,17 +11,19 @@ import com.codahale.metrics.jvm.{
   MemoryUsageGaugeSet,
   ThreadStatesGaugeSet
 }
-import com.codahale.metrics._
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.spotify.metrics.core.{MetricId, SemanticMetricRegistry, SemanticMetricSet}
 import com.spotify.metrics.jvm.{CpuGaugeSet, FileDescriptorGaugeSet}
 import io.prometheus.client.exporter.common.TextFormat
+import otoroshi.api.OtoroshiEnvHolder
 import otoroshi.cluster.{ClusterMode, StatsView}
 import otoroshi.env.Env
 import otoroshi.events.StatsDReporter
+import otoroshi.metrics.opentelemetry._
 import otoroshi.utils.RegexPool
 import otoroshi.utils.cache.types.UnboundedConcurrentHashMap
 import otoroshi.utils.prometheus.CustomCollector
+import otoroshi.utils.syntax.implicits._
 import play.api.Logger
 import play.api.inject.ApplicationLifecycle
 import play.api.libs.json.{JsArray, JsObject, JsValue, Json}
@@ -28,8 +31,8 @@ import play.api.libs.json.{JsArray, JsObject, JsValue, Json}
 import java.io.StringWriter
 import java.lang.management.ManagementFactory
 import java.util
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
-import java.util.concurrent.{ConcurrentHashMap, TimeUnit}
 import java.util.{Timer => _, _}
 import javax.management.{Attribute, ObjectName}
 import scala.concurrent.duration.FiniteDuration
@@ -62,6 +65,7 @@ class Metrics(env: Env, applicationLifecycle: ApplicationLifecycle) extends Time
 
   private val metricRegistry: SemanticMetricRegistry = new SemanticMetricRegistry
   private val jmxRegistry: MetricRegistry            = new MetricRegistry
+  private lazy val openTelemetryRegistry             = initOpenTelemetryMetrics()
 
   private val mbs = ManagementFactory.getPlatformMBeanServer
   private val rt  = Runtime.getRuntime
@@ -81,7 +85,8 @@ class Metrics(env: Env, applicationLifecycle: ApplicationLifecycle) extends Time
   private val lastdataInRate                = new AtomicLong(0L)
   private val lastdataOutRate               = new AtomicLong(0L)
   private val lastconcurrentHandledRequests = new AtomicLong(0L)
-  private val lastData                      = new UnboundedConcurrentHashMap[String, AtomicReference[Any]]() // TODO: analyze growth over time
+  private val lastData                      =
+    new UnboundedConcurrentHashMap[String, AtomicReference[Any]]() // TODO: analyze growth over time
 
   // metricRegistry.register("jvm.buffer", new BufferPoolMetricSet(ManagementFactory.getPlatformMBeanServer()))
   // metricRegistry.register("jvm.classloading", new ClassLoadingGaugeSet())
@@ -129,6 +134,25 @@ class Metrics(env: Env, applicationLifecycle: ApplicationLifecycle) extends Time
     }
   )
 
+  def initOpenTelemetryMetrics(): Option[OpenTelemetryMeter] = {
+    env.configurationJson.select("otoroshi").select("open-telemetry").select("server-metrics").asOpt[JsObject].flatMap {
+      config =>
+        val enabled = config.select("enabled").asOpt[Boolean].getOrElse(false)
+        if (enabled) {
+          val otlpConfig = OtlpSettings.format.reads(config).get
+          val sdk        =
+            OtlpSettings.sdkFor("root-server-metrics", env.clusterConfig.name, otlpConfig, OtoroshiEnvHolder.get())
+          val meter      = sdk.sdk
+            .meterBuilder(env.clusterConfig.name)
+            .setInstrumentationVersion(env.otoroshiVersion)
+            .build()
+          Some(new OpenTelemetryMeter(sdk, meter))
+        } else {
+          None
+        }
+    }
+  }
+
   private def register(name: String, obj: Metric): Unit = {
     metricRegistry.register(MetricId.build(name), obj)
     jmxRegistry.register(name, obj)
@@ -157,47 +181,60 @@ class Metrics(env: Env, applicationLifecycle: ApplicationLifecycle) extends Time
     }
   }
 
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
   def markString(name: String, value: String): Unit = mark(name, value)
-  def markLong(name: String, value: Long): Unit     = mark(name, value)
+
+  def markLong(name: String, value: Long): Unit = mark(name, value)
+
   def markDouble(name: String, value: Double): Unit = mark(name, value)
 
   def counterInc(name: MetricId): Unit = {
     metricRegistry.counter(name).inc()
     jmxRegistry.counter(name.getKey).inc()
+    openTelemetryRegistry.foreach(_.withLongCounter(name.getKey).add(1L))
   }
 
   def counterInc(name: String): Unit = {
     metricRegistry.counter(MetricId.build(name)).inc()
     jmxRegistry.counter(name).inc()
+    openTelemetryRegistry.foreach(_.withLongCounter(name).add(1L))
   }
 
   def counterIncOf(name: MetricId, of: Long): Unit = {
     metricRegistry.counter(name).inc(of)
     jmxRegistry.counter(name.getKey).inc(of)
+    openTelemetryRegistry.foreach(_.withLongCounter(name.getKey).add(Math.abs(of)))
   }
 
   def counterIncOf(name: String, of: Long): Unit = {
     metricRegistry.counter(MetricId.build(name)).inc(of)
     jmxRegistry.counter(name).inc(of)
+    openTelemetryRegistry.foreach(_.withLongCounter(name).add(Math.abs(of)))
   }
 
   def histogramUpdate(name: MetricId, value: Long): Unit = {
     metricRegistry.histogram(name).update(value)
     jmxRegistry.histogram(name.getKey).update(value)
+    openTelemetryRegistry.foreach(_.withLongHistogram(name.getKey).record(Math.abs(value)))
   }
+
   def histogramUpdate(name: String, value: Long): Unit = {
     metricRegistry.histogram(MetricId.build(name)).update(value)
     jmxRegistry.histogram(name).update(value)
+    openTelemetryRegistry.foreach(_.withLongHistogram(name).record(Math.abs(value)))
   }
 
   def timerUpdate(name: MetricId, duration: Long, unit: TimeUnit): Unit = {
     metricRegistry.timer(name).update(duration, unit)
     jmxRegistry.timer(name.getKey).update(duration, unit)
+    openTelemetryRegistry.foreach(_.withTimer(name.getKey).record(Math.abs(FiniteDuration(duration, unit).toNanos)))
   }
 
   def timerUpdate(name: String, duration: Long, unit: TimeUnit): Unit = {
     metricRegistry.timer(MetricId.build(name)).update(duration, unit)
     jmxRegistry.timer(name).update(duration, unit)
+    openTelemetryRegistry.foreach(_.withTimer(name).record(Math.abs(FiniteDuration(duration, unit).toNanos)))
   }
 
   override def withTimer[T](name: String, display: Boolean = false)(f: => T): T = {
@@ -212,6 +249,7 @@ class Metrics(env: Env, applicationLifecycle: ApplicationLifecycle) extends Time
         )
       }
       jmxCtx.close()
+      openTelemetryRegistry.foreach(_.withTimer(name).record(Math.abs(elapsed)))
       res
     } catch {
       case e: Throwable =>
@@ -222,6 +260,7 @@ class Metrics(env: Env, applicationLifecycle: ApplicationLifecycle) extends Time
         throw e
     }
   }
+
   override def withTimerAsync[T](name: String, display: Boolean = false)(
       f: => Future[T]
   )(implicit ec: ExecutionContext): Future[T] = {
@@ -232,6 +271,7 @@ class Metrics(env: Env, applicationLifecycle: ApplicationLifecycle) extends Time
       if (display) {
         logger.info(s"elapsed time for $name: ${elapsed} nanoseconds.")
       }
+      openTelemetryRegistry.foreach(_.withTimer(name).record(Math.abs(elapsed)))
       jmxCtx.close()
       if (r.isFailure) {
         metricRegistry.counter(MetricId.build(name + ".errors")).inc()
@@ -239,6 +279,8 @@ class Metrics(env: Env, applicationLifecycle: ApplicationLifecycle) extends Time
       }
     }
   }
+
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   private def internalGauge[T](f: => T): Gauge[T] = {
     new Gauge[T] {

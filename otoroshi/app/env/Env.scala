@@ -8,6 +8,7 @@ import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
 import com.typesafe.config.{ConfigFactory, ConfigRenderOptions}
 import io.netty.util.internal.PlatformDependent
+import otoroshi.metrics.{HasMetrics, Metrics}
 import org.joda.time.DateTime
 import org.mindrot.jbcrypt.BCrypt
 import org.slf4j.LoggerFactory
@@ -38,7 +39,6 @@ import otoroshi.storage.drivers.rediscala._
 import otoroshi.tcp.TcpService
 import otoroshi.utils.JsonPathValidator
 import otoroshi.utils.http.{AkkWsClient, WsClientChooser}
-import otoroshi.utils.metrics.{HasMetrics, Metrics}
 import otoroshi.utils.syntax.implicits._
 import play.api._
 import play.api.http.HttpConfiguration
@@ -193,16 +193,23 @@ class Env(
   private lazy val disableFunnyLogos: Boolean =
     configuration.getOptionalWithFileSupport[Boolean]("otoroshi.options.disableFunnyLogos").getOrElse(false)
 
+  lazy val customLogo: Option[String] = configuration.getOptionalWithFileSupport[String]("app.instance.logo")
+
   def otoroshiLogo: String = {
     val now = DateTime.now()
-    if (disableFunnyLogos) {
-      "/__otoroshi_assets/images/otoroshi-logo-color.png"
-    } else if (now.isAfter(xmasStart) && now.isBefore(xmasStop)) {
-      "/__otoroshi_assets/images/otoroshi-logo-xmas.png"
-    } else if (now.isAfter(halloweenStart) && now.isBefore(halloweenStop)) {
-      "/__otoroshi_assets/images/otoroshi-logo-halloween3.png"
-    } else {
-      "/__otoroshi_assets/images/otoroshi-logo-color.png"
+    customLogo match {
+      case Some(logo) => logo
+      case None       => {
+        if (disableFunnyLogos) {
+          "/__otoroshi_assets/images/otoroshi-logo-color.png"
+        } else if (now.isAfter(xmasStart) && now.isBefore(xmasStop)) {
+          "/__otoroshi_assets/images/otoroshi-logo-xmas.png"
+        } else if (now.isAfter(halloweenStart) && now.isBefore(halloweenStop)) {
+          "/__otoroshi_assets/images/otoroshi-logo-halloween3.png"
+        } else {
+          "/__otoroshi_assets/images/otoroshi-logo-color.png"
+        }
+      }
     }
   }
 
@@ -1152,7 +1159,7 @@ class Env(
     name = backofficeRoute.name
   )
 
-  lazy val otoroshiVersion    = "16.5.0-dev"
+  lazy val otoroshiVersion    = "16.7.0-dev"
   lazy val otoroshiVersionSem = Version(otoroshiVersion)
   lazy val checkForUpdates    = configuration.getOptionalWithFileSupport[Boolean]("app.checkForUpdates").getOrElse(true)
 

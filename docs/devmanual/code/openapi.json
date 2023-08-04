@@ -3,7 +3,7 @@
   "info" : {
     "title" : "Otoroshi Admin API",
     "description" : "Admin API of the Otoroshi reverse proxy",
-    "version" : "16.5.0-dev",
+    "version" : "16.7.0-dev",
     "contact" : {
       "name" : "Otoroshi Team",
       "email" : "oss@maif.fr"
@@ -17867,6 +17867,66 @@
       }
     },
     "/api/admins/simple/{username}" : {
+      "get" : {
+        "tags" : [ "admins" ],
+        "summary" : "???",
+        "operationId" : "otoroshi.controllers.adminapi.UsersController.findAdmin",
+        "parameters" : [ {
+          "name" : "username",
+          "in" : "path",
+          "schema" : {
+            "type" : "string"
+          },
+          "required" : true,
+          "description" : "the username parameter"
+        } ],
+        "security" : [ {
+          "otoroshi_auth" : [ ]
+        } ],
+        "responses" : {
+          "401" : {
+            "description" : "You have to provide an Api Key. Api Key can be passed with 'Otoroshi-Client-Id' and 'Otoroshi-Client-Secret' headers, or use basic http authentication",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "Bad resource format. Take another look to the swagger, or open an issue",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "Resource not found or does not exist",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200" : {
+            "description" : "Successful operation",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "description" : "unknown type",
+                  "type" : "object"
+                }
+              }
+            }
+          }
+        }
+      },
       "put" : {
         "tags" : [ "admins" ],
         "summary" : "???",
@@ -18119,6 +18179,66 @@
       }
     },
     "/api/admins/webauthn/{username}" : {
+      "get" : {
+        "tags" : [ "admins" ],
+        "summary" : "???",
+        "operationId" : "otoroshi.controllers.adminapi.UsersController.findWebAuthnAdmin",
+        "parameters" : [ {
+          "name" : "username",
+          "in" : "path",
+          "schema" : {
+            "type" : "string"
+          },
+          "required" : true,
+          "description" : "the username parameter"
+        } ],
+        "security" : [ {
+          "otoroshi_auth" : [ ]
+        } ],
+        "responses" : {
+          "401" : {
+            "description" : "You have to provide an Api Key. Api Key can be passed with 'Otoroshi-Client-Id' and 'Otoroshi-Client-Secret' headers, or use basic http authentication",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "Bad resource format. Take another look to the swagger, or open an issue",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "Resource not found or does not exist",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200" : {
+            "description" : "Successful operation",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "description" : "unknown type",
+                  "type" : "object"
+                }
+              }
+            }
+          }
+        }
+      },
       "put" : {
         "tags" : [ "admins" ],
         "summary" : "???",
@@ -21459,81 +21579,81 @@
       },
       "otoroshi.models.DataExporterConfig" : {
         "type" : "object",
-        "description" : "Data exporter settings",
+        "description" : "???",
         "properties" : {
           "desc" : {
             "type" : "string",
-            "description" : "Description"
+            "description" : "???"
           },
           "_loc" : {
             "$ref" : "#/components/schemas/otoroshi.models.EntityLocation",
-            "description" : "Entity location"
+            "description" : "???"
           },
           "bufferSize" : {
             "type" : "integer",
             "format" : "int32",
-            "description" : "Number of events in buffer"
+            "description" : "???"
           },
           "jsonWorkers" : {
             "type" : "integer",
             "format" : "int32",
-            "description" : "Number of workers that transform events"
+            "description" : "???"
           },
           "groupDuration" : {
             "type" : "number",
-            "description" : "The max duration before sending group"
+            "description" : "???"
           },
           "groupSize" : {
             "type" : "integer",
             "format" : "int32",
-            "description" : "The max size of events group before sending"
+            "description" : "???"
           },
           "type" : {
             "$ref" : "#/components/schemas/otoroshi.models.DataExporterConfigType",
-            "description" : "Entity type"
+            "description" : "???"
           },
           "tags" : {
             "type" : "array",
             "items" : {
               "type" : "string"
             },
-            "description" : "Entity tags"
+            "description" : "???"
           },
           "sendWorkers" : {
             "type" : "integer",
             "format" : "int32",
-            "description" : "Number of workers that sends events"
+            "description" : "???"
           },
           "id" : {
             "type" : "string",
-            "description" : "Id of the exporter"
+            "description" : "???"
           },
           "name" : {
             "type" : "string",
-            "description" : "Entity name"
+            "description" : "???"
           },
           "metadata" : {
             "type" : "object",
             "additionalProperties" : {
               "type" : "string"
             },
-            "description" : "Entity metadata"
+            "description" : "???"
           },
           "config" : {
             "$ref" : "#/components/schemas/otoroshi.models.Exporter",
-            "description" : "Exporter config"
+            "description" : "???"
           },
           "projection" : {
             "type" : "object",
-            "description" : "Event projection"
+            "description" : "???"
           },
           "enabled" : {
             "type" : "boolean",
-            "description" : "Is the exporter enabled"
+            "description" : "???"
           },
           "filtering" : {
             "$ref" : "#/components/schemas/otoroshi.models.DataExporterConfigFiltering",
-            "description" : "Filtering options"
+            "description" : "???"
           }
         }
       },
