@@ -66,17 +66,18 @@ export function RoutesTable(props) {
 
   const greenScoreColumn = {
     title: 'Green Score',
-    id: 'green_score',
+    filterId: 'green_score_rules',
     style: {
       textAlign: 'center',
       width: 100
     },
     notFilterable: true,
+    content: item => calculateGreenScore(item.green_score_rules).score,
     cell: (_, item) => {
       const rankInformations = calculateGreenScore(item.green_score_rules);
-      console.log(rankInformations)
       return <>
-        {Math.round(rankInformations.score / MAX_GREEN_SCORE_NOTE * 100)}
+        {/* {Math.round(rankInformations.score / MAX_GREEN_SCORE_NOTE * 100)} */}
+        {rankInformations.letter}
         <i className="fa fa-leaf ms-2" style={{ color: rankInformations.rank }} />
       </>
     }

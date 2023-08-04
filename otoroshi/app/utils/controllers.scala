@@ -818,10 +818,20 @@ trait CrudHelper[Entity <: EntityLocationSupport, Error] extends EntityHelper[En
 
       if (hasSorted) {
         sorted.foldLeft(values) { case (sortedArray, sort) =>
-          val out = sortedArray
-            .sortBy(r => {
-              String.valueOf(JsonOperationsHelper.getValueAtPath(sort._1.toLowerCase(), r)._2)
-            })(Ordering[String].reverse)
+          val out = if(sort._1 == "green_score_rules") {
+            sortedArray
+              .sortBy(r => {
+                val rules = JsonOperationsHelper.getValueAtPath(sort._1.toLowerCase(), r)._2
+
+
+
+              })(Ordering[String].reverse)
+          } else {
+            sortedArray
+              .sortBy(r => {
+                String.valueOf(JsonOperationsHelper.getValueAtPath(sort._1.toLowerCase(), r)._2)
+              })(Ordering[String].reverse)
+          }
 
           // sort._2 = descending order
           if (sort._2) {

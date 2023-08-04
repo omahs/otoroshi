@@ -79,6 +79,7 @@ export function calculateGreenScore(routeRules) {
 
   return {
     score,
-    rank: rankIdx === -1 ? "Not evaluated" : Object.keys(GREEN_SCORE_GRADES)[rankIdx]
+    rank: rankIdx === -1 ? "Not evaluated" : Object.keys(GREEN_SCORE_GRADES)[rankIdx],
+    letter: String.fromCharCode(65 + rankIdx)
   }
 }
