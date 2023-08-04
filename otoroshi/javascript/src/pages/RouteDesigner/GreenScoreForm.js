@@ -37,9 +37,18 @@ export default function GreenScoreForm(props) {
 
   return <div>
     {sections.map(({ id, rules }, currentSectionIdx) => {
-      return <div key={id}>
+      return <div key={id} className='p-3'>
+        <h4 className='mb-3' style={{ textTransform: 'capitalize' }}>{id}</h4>
         {rules.map(({ id, description, enabled, advice }, currentRuleIdx) => {
-          return <div key={id} className='d-flex align-items-center'>
+          return <div key={id}
+            className='d-flex align-items-center'
+            style={{
+              cursor: 'pointer'
+            }}
+            onClick={e => {
+              e.stopPropagation();
+              onChange(!enabled, currentSectionIdx, currentRuleIdx)
+            }}>
             <div className='flex'>
               <p className='offset-1 mb-0' style={{ fontWeight: 'bold' }}>{description}</p>
               <p className='offset-1'>{advice}</p>

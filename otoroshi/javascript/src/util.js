@@ -71,7 +71,6 @@ export function calculateGreenScore(routeRules) {
 
   const score = sections.reduce((acc, item) => {
     return acc + item.rules.reduce((acc, rule) => {
-      console.log(rule.id, MAX_GREEN_SCORE_NOTE * (rule.section_weight / 100) * (rule.weight / 100))
       return acc += (rule.enabled ? MAX_GREEN_SCORE_NOTE * (rule.section_weight / 100) * (rule.weight / 100) : 0)
     }, 0)
   }, 0);

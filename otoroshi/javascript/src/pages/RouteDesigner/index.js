@@ -126,6 +126,35 @@ function InformationsTab({ isActive, entity, value, history }) {
   );
 }
 
+function GreenScoreTab({ isActive, entity, value, history }) {
+  return (
+    <div className="ms-2">
+      <button
+        type="button"
+        className="btn btn-sm toggle-form-buttons d-flex align-items-center h-100"
+        onClick={() => {
+          const to = `/${entity.link}/${value.id}?tab=green_score`;
+          if (!window.location.href.includes(to))
+            history.replace({
+              pathname: to,
+              state: {
+                value,
+              },
+            });
+        }}
+        style={{
+          borderBottomLeftRadius: 0,
+          borderBottomRightRadius: 0,
+          backgroundColor: isActive ? 'var(--color-primary)' : 'var(--bg-color_level2)',
+          color: isActive ? 'var(--color-white)' : 'var(--color_level2)',
+        }}>
+        <i className="fas fa-leaf me-2" style={{ fontSize: '1.33333em' }} />
+        Green Score
+      </button>
+    </div>
+  );
+}
+
 function RoutesTab({ isActive, entity, value, history }) {
   return (
     <div className="ms-2">
@@ -276,6 +305,11 @@ function ManagerTitle({
       visible: () => !isOnViewPlugins,
       tab: 'informations',
       component: () => <InformationsTab isActive={query === 'informations'} {...commonsProps} />,
+    },
+    {
+      visible: () => !isOnViewPlugins,
+      tab: 'green_score',
+      component: () => <GreenScoreTab isActive={query === 'green_score'} {...commonsProps} />,
     },
     {
       visible: () => ['route-compositions'].includes(entity.link),
@@ -532,6 +566,7 @@ class Manager extends React.Component {
         <div className="designer ps-3">
           <Informations
             {...this.props}
+            query={query}
             routeId={p.routeId}
             ref={this.viewRef}
             isCreation={isCreation}

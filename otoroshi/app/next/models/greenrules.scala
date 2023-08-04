@@ -34,7 +34,8 @@ case class Rule(id: RuleId,
                 advice: Option[String] = None,
                 weight: Double,
                 sectionWeight: Double,
-                enabled: Boolean = true) {
+                enabled: Boolean = true
+               ) {
   def json(): JsValue = Json.obj(
     "id" -> id.value,
     "description" -> description,
@@ -54,7 +55,7 @@ object Rule {
         advice = item.select("advice").asOpt[String],
         weight = item.select("weight").as[Double],
         sectionWeight = item.select("section_weight").as[Double],
-        enabled = item.select("enabled").as[Boolean],
+        enabled = item.select("enabled").as[Boolean]
       )))
     } recover { case e =>
       JsError(e.getMessage)

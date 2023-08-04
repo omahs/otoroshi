@@ -10,7 +10,7 @@ import { ENTITIES, FormSelector } from '../../components/FormSelector';
 import GreenScoreForm from './GreenScoreForm';
 
 export const Informations = forwardRef(
-  ({ isCreation, value, setValue, setSaveButton, routeId }, ref) => {
+  ({ isCreation, value, setValue, setSaveButton, routeId, query }, ref) => {
     const history = useHistory();
     const location = useLocation();
     const [showAdvancedForm, toggleAdvancedForm] = useState(false);
@@ -243,7 +243,20 @@ export const Informations = forwardRef(
       }
     };
 
-    const flow = [
+    const isOnGreenScorePage = query === "green_score";
+
+    const greenScoreStep = {
+      type: 'group',
+      name: ({ value }) => {
+        const rankInformations = calculateGreenScore(value.green_score_rules);
+        return <span>Green score <i className="fa fa-leaf" style={{ color: rankInformations.rank }} /></span>
+      },
+      collapsable: true,
+      collapsed: !isOnGreenScorePage,
+      fields: ['greenScoreRules']
+    }
+
+    const flow = isOnGreenScorePage ? [greenScoreStep] : [
       {
         type: 'group',
         name: 'Expose your route',
@@ -269,16 +282,6 @@ export const Informations = forwardRef(
         name: 'Misc.',
         collapsed: true,
         fields: ['tags', 'metadata', 'core_metadata'],
-      },
-      {
-        type: 'group',
-        name: ({ value }) => {
-          const rankInformations = calculateGreenScore(value.green_score_rules);
-          console.log(value.green_score_rules)
-          return <span>Green score <i className="fa fa-leaf" style={{ color: rankInformations.rank }} /></span>
-        },
-        collapsed: false,
-        fields: ['greenScoreRules']
       }
     ];
 

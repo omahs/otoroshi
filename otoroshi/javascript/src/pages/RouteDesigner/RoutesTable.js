@@ -76,7 +76,7 @@ export function RoutesTable(props) {
       const rankInformations = calculateGreenScore(item.green_score_rules);
       console.log(rankInformations)
       return <>
-        {Math.round(rankInformations.score/MAX_GREEN_SCORE_NOTE * 100)}
+        {Math.round(rankInformations.score / MAX_GREEN_SCORE_NOTE * 100)}
         <i className="fa fa-leaf ms-2" style={{ color: rankInformations.rank }} />
       </>
     }
