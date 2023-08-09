@@ -436,7 +436,7 @@ export class Table extends Component {
         //     placeholder="Search ..."
         //   />
         // },
-        Cell: (r) => {
+        Cell: c.Cell || ((r) => {
           const value = r.value;
           const original = r.original;
           return c.cell ? (
@@ -461,7 +461,7 @@ export class Table extends Component {
               {c.wrappedCell ? c.wrappedCell(value, original, this) : value}
             </div>
           );
-        },
+        }),
       };
     });
 

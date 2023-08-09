@@ -143,29 +143,60 @@ object RulesManager {
   )
 }
 
-case class GreenScoreConfig(sections: Seq[RulesSection]) extends NgPluginConfig {
+case class DynamicRulesSections(
+                                 thresholdDataInBytes: Int = 20,
+                                 thresholdDataOutBytes: Int = 20,
+                                 thresholdHeadersInBytes: Int = 20,
+                                 thresholdHeadersOutBytes: Int = 20
+                               )
+
+object DynamicRulesSections {
+  def reads(item: JsValue): JsResult[DynamicRulesSections] = {
+    Try {
+      JsSuccess(DynamicRulesSections(
+        thresholdDataInBytes = item.select("thresholdDataInBytes").as[Int],
+        thresholdDataOutBytes = item.select("thresholdDataOutBytes").as[Int],
+        thresholdHeadersInBytes = item.select("thresholdHeadersInBytes").as[Int],
+        thresholdHeadersOutBytes = item.select("thresholdHeadersOutBytes").as[Int]
+      ))
+    } recover { case e =>
+      JsError(e.getMessage)
+    } get
+  }
+}
+
+case class GreenScoreConfig(sections: Seq[RulesSection], dynamicSections: DynamicRulesSections) extends NgPluginConfig {
   def json: JsValue = Json.obj(
     "sections" -> sections.map(section => {
       Json.obj(
         "id" -> section.id.value,
         "rules" -> section.rules.map(_.json())
       )
-    })
+    }),
+    "dynamic_sections" -> Json.obj(
+      "thresholdDataInBytes" -> dynamicSections.thresholdDataInBytes,
+      "thresholdDataOutBytes" -> dynamicSections.thresholdDataOutBytes,
+      "thresholdHeadersInBytes" -> dynamicSections.thresholdHeadersInBytes,
+      "thresholdHeadersOutBytes" -> dynamicSections.thresholdHeadersOutBytes
+    )
   )
 }
 
 object GreenScoreConfig {
   def readFrom(lookup: JsLookupResult): GreenScoreConfig = {
     lookup match {
-      case JsDefined(value) => format.reads(value).getOrElse(GreenScoreConfig(sections = RulesManager.sections))
-      case _: JsUndefined => GreenScoreConfig(sections = RulesManager.sections)
+      case JsDefined(value) => format.reads(value).getOrElse(GreenScoreConfig(sections = RulesManager.sections, dynamicSections = DynamicRulesSections()))
+      case _: JsUndefined => GreenScoreConfig(sections = RulesManager.sections, dynamicSections = DynamicRulesSections())
     }
   }
 
   val format = new Format[GreenScoreConfig] {
     override def reads(json: JsValue): JsResult[GreenScoreConfig] = Try {
       GreenScoreConfig(
-        sections = json.select("sections").as[Seq[RulesSection]](RulesSection.reads)
+        sections = json.select("sections").as[Seq[RulesSection]](RulesSection.reads),
+        dynamicSections = json.select("dynamic_sections")
+          .asOpt[DynamicRulesSections](DynamicRulesSections.reads)
+          .getOrElse(DynamicRulesSections())
       )
     } match {
       case Failure(e) => JsError(e.getMessage)

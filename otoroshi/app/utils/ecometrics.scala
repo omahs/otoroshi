@@ -20,6 +20,10 @@ class GlobalScore {
     backendsScore.getOrElseUpdate(backendId, new BackendScore()).update(dataIn, dataOut, headers, headersOut)
   }
 
+  def computeRoute(routeId: String): Double = routesScore.get(routeId).map(_.compute()).getOrElse(0)
+
+  def computeBackend(backendId: String): Double = backendsScore.get(backendId).map(_.compute()).getOrElse(0)
+
   def updateRoute(routeId: String, overhead: Long,
                     overheadWithoutCircuitBreaker: Long,
                     circuitBreakerDuration: Long,
@@ -97,6 +101,10 @@ class EcoMetrics(env: Env)  {
   private val registry = new GlobalScore()
 
   def compute() = registry.compute()
+
+  def computeRoute(routeId: String): Integer = registry.computeRoute(routeId).toInt
+
+  def computeBackend(backendId: String): Integer = registry.computeBackend(backendId).toInt
 
   def updateBackend(backendId: String,
                     dataIn: Long,
